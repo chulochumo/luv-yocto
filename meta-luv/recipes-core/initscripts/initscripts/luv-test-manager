@@ -264,6 +264,11 @@ if [ ! -z ${LUVDEBUG} ]; then
     exec &> /dev/console
 fi
 
+# invoke the script that saves the results when booted via netboot
+if [ -n ${LUVNETBOOT} ]; then
+    save_luv_netboot_results
+fi
+
 mountpoint -q ${LUV_STORAGE}
 if [ $? -eq 0 ]; then
     umount ${LUV_STORAGE}
