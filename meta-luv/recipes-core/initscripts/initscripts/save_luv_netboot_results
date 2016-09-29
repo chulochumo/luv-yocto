@@ -1,0 +1,61 @@
+#!/bin/bash
+#
+# Copyright 2016 Intel Corporation; author Gayatri Kammela
+#
+# Running luv-netboot image saves the results in /tmp directory and are
+# replaced for every reboot. This can be a problem as there is no way of
+# getting the copy of those results. This script saves the results for every
+# boot by packing all the results to a zip folder and then upload to a given 
+# webserver.
+#####################################################################
+
+# Gather results in a compressed tarball
+get_tar_luv_results()
+{
+    grep -q luv_storage /proc/cmdline
+    if [ $? -eq 0 ]; then
+        tar -zcvf ${LUV_STORAGE}/luv-results-$tstamp.tar.gz ${LUV_STORAGE}/
+        luv_tar_results=${LUV_STORAGE}/luv-results-$tstamp.tar.gz
+    else
+        return 1
+    fi
+}
+
+# check if the url is valid
+get_luv_url()
+{
+    # retrieve the contents of the variable luv_storage
+    storage_url=$(cat /proc/cmdline | sed -e 's/^.*luv_storage=//' -e 's/ .*$//')
+    valid_exp='(https?|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
+    if ! [[ ${storage_url} =~ $valid_exp ]] ; then
+        echo $alert_url_missing
+        psplash_write "MSG $alert_url_missing"
+        if [ -e $FIFO ]; then
+            umount -l /mnt/.psplash
+        fi
+    else
+        return 1 
+    fi
+}
+
+
+FIFO="/mnt/.psplash/psplash_fifo"
+psplash_write() {
+    if [ -e $FIFO ]; then
+        echo $1 > $FIFO
+    fi
+}
+
+# warn the user when the url to save the results is missing
+alert_url_missing="No valid URL is provided to save the results! Please provide url!!"
+
+LUV_STORAGE=/tmp/luv-storage
+tstamp=$(date +"%Y-%m-%d--%H-%M-%S")
+
+get_tar_luv_results
+if [ $? -eq 0 ]; then
+    get_luv_url
+    if [ $? -eq 0 ]; then
+        curl -F "uploadedfile=@/${luv_tar_results}" ${storage_url}
+    fi
+fi
