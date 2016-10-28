@@ -5,8 +5,8 @@
 ROOTFS_PKGMANAGE = "rpm smartpm"
 ROOTFS_PKGMANAGE_BOOTSTRAP = "run-postinsts"
 
-# Add 50Meg of extra space for Smart
-IMAGE_ROOTFS_EXTRA_SPACE_append = "${@bb.utils.contains("PACKAGE_INSTALL", "smartpm", " + 51200", "" ,d)}"
+# Add 100Meg of extra space for Smart
+IMAGE_ROOTFS_EXTRA_SPACE_append = "${@bb.utils.contains("PACKAGE_INSTALL", "smartpm", " + 102400", "" ,d)}"
 
 # Smart is python based, so be sure python-native is available to us.
 EXTRANATIVEPATH += "python-native"
@@ -31,7 +31,7 @@ do_populate_sdk[lockfiles] += "${DEPLOY_DIR_RPM}/rpm.lock"
 
 python () {
     if d.getVar('BUILD_IMAGES_FROM_FEEDS', True):
-        flags = d.getVarFlag('do_rootfs', 'recrdeptask')
+        flags = d.getVarFlag('do_rootfs', 'recrdeptask', True)
         flags = flags.replace("do_package_write_rpm", "")
         flags = flags.replace("do_deploy", "")
         flags = flags.replace("do_populate_sysroot", "")

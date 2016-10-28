@@ -63,7 +63,7 @@ def legitimize_package_name(s):
     def fixutf(m):
         cp = m.group(1)
         if cp:
-            return ('\u%s' % cp).decode('unicode_escape').encode('utf-8')
+            return ('\\u%s' % cp).encode('latin-1').decode('unicode_escape')
 
     # Handle unicode codepoints encoded as <U0123>, as in glibc locale files.
     s = re.sub('<U([0-9A-Fa-f]{1,4})>', fixutf, s)
@@ -121,6 +121,9 @@ def do_split_packages(d, root, file_regex, output_pattern, description, postinst
     """
 
     dvar = d.getVar('PKGD', True)
+    root = d.expand(root)
+    output_pattern = d.expand(output_pattern)
+    extra_depends = d.expand(extra_depends)
 
     # If the root directory doesn't exist, don't error out later but silently do
     # no splitting.
@@ -143,7 +146,7 @@ def do_split_packages(d, root, file_regex, output_pattern, description, postinst
 
 
     packages = d.getVar('PACKAGES', True).split()
-    split_packages = []
+    split_packages = set()
 
     if postinst:
         postinst = '#!/bin/sh\n' + postinst + '\n'
@@ -180,7 +183,7 @@ def do_split_packages(d, root, file_regex, output_pattern, description, postinst
             continue
         on = legitimize_package_name(m.group(1))
         pkg = output_pattern % on
-        split_packages.append(pkg)
+        split_packages.add(pkg)
         if not pkg in packages:
             if prepend:
                 packages = [pkg] + packages
@@ -223,7 +226,7 @@ def do_split_packages(d, root, file_regex, output_pattern, description, postinst
             hook(f, pkg, file_regex, output_pattern, m.group(1))
 
     d.setVar('PACKAGES', ' '.join(packages))
-    return split_packages
+    return list(split_packages)
 
 PACKAGE_DEPENDS += "file-native"
 
@@ -298,6 +301,15 @@ def get_conffiles(pkg, d):
     os.chdir(cwd)
     return conf_list
 
+def checkbuildpath(file, d):
+    tmpdir = d.getVar('TMPDIR', True)
+    with open(file) as f:
+        file_content = f.read()
+        if tmpdir in file_content:
+            return True
+
+    return False
+
 def splitdebuginfo(file, debugfile, debugsrcdir, sourcefile, d):
     # Function to split a single file into two components, one is the stripped
     # target system binary, the other contains any debugging information. The
@@ -310,8 +322,6 @@ def splitdebuginfo(file, debugfile, debugsrcdir, sourcefile, d):
     dvar = d.getVar('PKGD', True)
     objcopy = d.getVar("OBJCOPY", True)
     debugedit = d.expand("${STAGING_LIBDIR_NATIVE}/rpm/bin/debugedit")
-    workdir = d.getVar("WORKDIR", True)
-    workparentdir = d.getVar("DEBUGSRC_OVERRIDE_PATH", True) or os.path.dirname(os.path.dirname(workdir))
 
     # We ignore kernel modules, we don't generate debug info files.
     if file.find("/lib/modules/") != -1 and file.endswith(".ko"):
@@ -325,7 +335,7 @@ def splitdebuginfo(file, debugfile, debugsrcdir, sourcefile, d):
 
     # We need to extract the debug src information here...
     if debugsrcdir:
-        cmd = "'%s' -b '%s' -d '%s' -i -l '%s' '%s'" % (debugedit, workparentdir, debugsrcdir, sourcefile, file)
+        cmd = "'%s' -i -l '%s' '%s'" % (debugedit, sourcefile, file)
         (retval, output) = oe.utils.getstatusoutput(cmd)
         if retval:
             bb.fatal("debugedit failed with exit code %s (cmd was %s)%s" % (retval, cmd, ":\n%s" % output if output else ""))
@@ -364,6 +374,13 @@ def copydebugsources(debugsrcdir, d):
         workparentdir = os.path.dirname(os.path.dirname(workdir))
         workbasedir = os.path.basename(os.path.dirname(workdir)) + "/" + os.path.basename(workdir)
 
+        # If build path exists in sourcefile, it means toolchain did not use
+        # -fdebug-prefix-map to compile
+        if checkbuildpath(sourcefile, d):
+            localsrc_prefix = workparentdir + "/"
+        else:
+            localsrc_prefix = "/usr/src/debug/"
+
         nosuchdir = []
         basepath = dvar
         for p in debugsrcdir.split("/"):
@@ -377,9 +394,11 @@ def copydebugsources(debugsrcdir, d):
         # We need to ignore files that are not actually ours
         # we do this by only paying attention to items from this package
         processdebugsrc += "fgrep -zw '%s' | "
+        # Remove prefix in the source paths
+        processdebugsrc += "sed 's#%s##g' | "
         processdebugsrc += "(cd '%s' ; cpio -pd0mlL --no-preserve-owner '%s%s' 2>/dev/null)"
 
-        cmd = processdebugsrc % (sourcefile, workbasedir, workparentdir, dvar, debugsrcdir)
+        cmd = processdebugsrc % (sourcefile, workbasedir, localsrc_prefix, workparentdir, dvar, debugsrcdir)
         (retval, output) = oe.utils.getstatusoutput(cmd)
         # Can "fail" if internal headers/transient sources are attempted
         #if retval:
@@ -427,7 +446,7 @@ def get_package_additional_metadata (pkg_type, d):
         if d.getVar(key, False) is None:
             continue
         d.setVarFlag(key, "type", "list")
-        if d.getVarFlag(key, "separator") is None:
+        if d.getVarFlag(key, "separator", True) is None:
             d.setVarFlag(key, "separator", "\\n")
         metadata_fields = [field.strip() for field in oe.data.typed_value(key, d)]
         return "\n".join(metadata_fields).strip()
@@ -708,6 +727,7 @@ python fixup_perms () {
     dvar = d.getVar('PKGD', True)
 
     fs_perms_table = {}
+    fs_link_table = {}
 
     # By default all of the standard directories specified in
     # bitbake.conf will get 0755 root:root.
@@ -754,24 +774,32 @@ python fixup_perms () {
                     continue
                 entry = fs_perms_entry(d.expand(line))
                 if entry and entry.path:
-                    fs_perms_table[entry.path] = entry
+                    if entry.link:
+                        fs_link_table[entry.path] = entry
+                        if entry.path in fs_perms_table:
+                            fs_perms_table.pop(entry.path)
+                    else:
+                        fs_perms_table[entry.path] = entry
+                        if entry.path in fs_link_table:
+                            fs_link_table.pop(entry.path)
             f.close()
 
     # Debug -- list out in-memory table
     #for dir in fs_perms_table:
     #    bb.note("Fixup Perms: %s: %s" % (dir, str(fs_perms_table[dir])))
+    #for link in fs_link_table:
+    #    bb.note("Fixup Perms: %s: %s" % (link, str(fs_link_table[link])))
 
     # We process links first, so we can go back and fixup directory ownership
     # for any newly created directories
-    for dir in fs_perms_table:
-        if not fs_perms_table[dir].link:
-            continue
-
+    # Process in sorted order so /run gets created before /run/lock, etc.
+    for entry in sorted(fs_link_table.values(), key=lambda x: x.link):
+        link = entry.link
+        dir = entry.path
         origin = dvar + dir
         if not (cpath.exists(origin) and cpath.isdir(origin) and not cpath.islink(origin)):
             continue
 
-        link = fs_perms_table[dir].link
         if link[0] == "/":
             target = dvar + link
             ptarget = link
@@ -791,9 +819,6 @@ python fixup_perms () {
         os.symlink(link, origin)
 
     for dir in fs_perms_table:
-        if fs_perms_table[dir].link:
-            continue
-
         origin = dvar + dir
         if not (cpath.exists(origin) and cpath.isdir(origin)):
             continue
@@ -815,6 +840,9 @@ python split_and_strip_files () {
 
     dvar = d.getVar('PKGD', True)
     pn = d.getVar('PN', True)
+
+    oldcwd = os.getcwd()
+    os.chdir(dvar)
 
     # We default to '.debug' style
     if d.getVar('PACKAGE_DEBUG_SPLIT_STYLE', True) == 'debug-file-directory':
@@ -838,8 +866,6 @@ python split_and_strip_files () {
 
     sourcefile = d.expand("${WORKDIR}/debugsources.list")
     bb.utils.remove(sourcefile)
-
-    os.chdir(dvar)
 
     # Return type (bits):
     # 0 - not elf
@@ -878,7 +904,8 @@ python split_and_strip_files () {
     inodes = {}
     libdir = os.path.abspath(dvar + os.sep + d.getVar("libdir", True))
     baselibdir = os.path.abspath(dvar + os.sep + d.getVar("base_libdir", True))
-    if (d.getVar('INHIBIT_PACKAGE_STRIP', True) != '1'):
+    if (d.getVar('INHIBIT_PACKAGE_STRIP', True) != '1' or \
+            d.getVar('INHIBIT_PACKAGE_DEBUG_SPLIT', True) != '1'):
         for root, dirs, files in cpath.walk(dvar):
             for f in files:
                 file = os.path.join(root, f)
@@ -905,7 +932,7 @@ python split_and_strip_files () {
                     continue
                 # Check its an excutable
                 if (s[stat.ST_MODE] & stat.S_IXUSR) or (s[stat.ST_MODE] & stat.S_IXGRP) or (s[stat.ST_MODE] & stat.S_IXOTH) \
-                        or ((file.startswith(libdir) or file.startswith(baselibdir)) and ".so" in f):
+                        or ((file.startswith(libdir) or file.startswith(baselibdir)) and (".so" in f or ".node" in f)):
                     # If it's a symlink, and points to an ELF file, we capture the readlink target
                     if cpath.islink(file):
                         target = os.readlink(file)
@@ -1026,6 +1053,7 @@ python split_and_strip_files () {
     #
     # End of strip
     #
+    os.chdir(oldcwd)
 }
 
 python populate_packages () {
@@ -1233,8 +1261,8 @@ python emit_pkgdata() {
     def write_if_exists(f, pkg, var):
         def encode(str):
             import codecs
-            c = codecs.getencoder("string_escape")
-            return c(str)[0]
+            c = codecs.getencoder("unicode_escape")
+            return c(str)[0].decode("latin1")
 
         val = d.getVar('%s_%s' % (var, pkg), True)
         if val:
@@ -1478,7 +1506,7 @@ python package_do_shlibs() {
             m = re.match("\s+RPATH\s+([^\s]*)", l)
             if m:
                 rpaths = m.group(1).replace("$ORIGIN", ldir).split(":")
-                rpath = map(os.path.normpath, rpaths)
+                rpath = list(map(os.path.normpath, rpaths))
         for l in lines:
             m = re.match("\s+NEEDED\s+([^\s]*)", l)
             if m:
@@ -1648,7 +1676,7 @@ python package_do_shlibs() {
                 bb.debug(2, '%s: Dependency %s covered by PRIVATE_LIBS' % (pkg, n[0]))
                 continue
             if n[0] in shlib_provider.keys():
-                shlib_provider_path = list()
+                shlib_provider_path = []
                 for k in shlib_provider[n[0]].keys():
                     shlib_provider_path.append(k)
                 match = None
@@ -1909,12 +1937,11 @@ python package_depchains() {
         for pkg in pkglibdeps:
             for k in pkglibdeps[pkg]:
                 add_dep(pkglibdeplist, k)
-        # FIXME this should not look at PN once all task recipes inherit from task.bbclass
-        dbgdefaultdeps = ((d.getVar('DEPCHAIN_DBGDEFAULTDEPS', True) == '1') or (d.getVar('PN', True) or '').startswith('packagegroup-'))
+        dbgdefaultdeps = ((d.getVar('DEPCHAIN_DBGDEFAULTDEPS', True) == '1') or (bb.data.inherits_class('packagegroup', d)))
 
     for suffix in pkgs:
         for pkg in pkgs[suffix]:
-            if d.getVarFlag('RRECOMMENDS_' + pkg, 'nodeprrecs'):
+            if d.getVarFlag('RRECOMMENDS_' + pkg, 'nodeprrecs', True):
                 continue
             (base, func) = pkgs[suffix][pkg]
             if suffix == "-dev":
@@ -2104,4 +2131,3 @@ def mapping_rename_hook(d):
     runtime_mapping_rename("RDEPENDS", pkg, d)
     runtime_mapping_rename("RRECOMMENDS", pkg, d)
     runtime_mapping_rename("RSUGGESTS", pkg, d)
-

@@ -144,6 +144,9 @@
                     </para></listitem>
                 <listitem><para><emphasis>bluetooth:</emphasis> Include
                     bluetooth support (integrated BT only).</para></listitem>
+                <listitem><para><emphasis>bluez5:</emphasis> Include
+                    BlueZ Version 5, which provides core Bluetooth layers and
+                    protocols support.</para></listitem>
                 <listitem><para><emphasis>cramfs:</emphasis> Include CramFS
                     support.</para></listitem>
                 <listitem><para><emphasis>directfb:</emphasis>
@@ -308,6 +311,13 @@
                 <listitem><para><emphasis>nfs-server:</emphasis>
                     Installs an NFS server.
                     </para></listitem>
+                <listitem><para><emphasis>perf:</emphasis>
+                    Installs profiling tools such as
+                    <filename>perf</filename>, <filename>systemtap</filename>,
+                    and <filename>LTTng</filename>.
+                    For general information on user-space tools, see the
+                    <ulink url='&YOCTO_DOCS_SDK_URL;#sdk-manual'>Yocto Project Software Development Kit (SDK) Developer's Guide</ulink>.
+                    </para></listitem>
                 <listitem><para><emphasis>ssh-server-dropbear:</emphasis>
                     Installs the Dropbear minimal SSH server.
                     </para></listitem>
@@ -327,15 +337,6 @@
                     section in the Yocto Project Development Manual.
                     For information on tracing and profiling, see the
                     <ulink url='&YOCTO_DOCS_PROF_URL;'>Yocto Project Profiling and Tracing Manual</ulink>.
-                    </para></listitem>
-                <listitem><para><emphasis>tools-profile:</emphasis>
-                    Installs profiling tools such as
-                    <filename>oprofile</filename>, <filename>exmap</filename>,
-                    and <filename>LTTng</filename>.
-                    For general information on user-space tools, see the
-                    "<ulink url='&YOCTO_DOCS_ADT_URL;#user-space-tools'>User-Space Tools</ulink>"
-                    section in the Yocto Project Application Developer's
-                    Guide.
                     </para></listitem>
                 <listitem><para><emphasis>tools-sdk:</emphasis>
                     Installs a full SDK that runs on the device.

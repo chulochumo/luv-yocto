@@ -7,9 +7,6 @@ B = "${WORKDIR}/build"
 # We need to unset CCACHE otherwise cmake gets too confused
 CCACHE = ""
 
-# We want the staging and installing functions from autotools
-inherit autotools
-
 # C/C++ Compiler (without cpu arch/tune arguments)
 OECMAKE_C_COMPILER ?= "`echo ${CC} | sed 's/^\([^ ]*\).*/\1/'`"
 OECMAKE_CXX_COMPILER ?= "`echo ${CXX} | sed 's/^\([^ ]*\).*/\1/'`"
@@ -29,6 +26,8 @@ OECMAKE_EXTRA_ROOT_PATH ?= ""
 
 OECMAKE_FIND_ROOT_PATH_MODE_PROGRAM = "ONLY"
 OECMAKE_FIND_ROOT_PATH_MODE_PROGRAM_class-native = "BOTH"
+
+EXTRA_OECMAKE_append = " ${PACKAGECONFIG_CONFARGS}"
 
 # CMake expects target architectures in the format of uname(2),
 # which do not always match TARGET_ARCH, so all the necessary
@@ -127,12 +126,12 @@ cmake_do_configure() {
 
 cmake_do_compile()  {
 	cd ${B}
-	base_do_compile
+	base_do_compile VERBOSE=1
 }
 
 cmake_do_install() {
 	cd ${B}
-	autotools_do_install
+	oe_runmake 'DESTDIR=${D}' install
 }
 
 EXPORT_FUNCTIONS do_configure do_compile do_install do_generate_toolchain_file

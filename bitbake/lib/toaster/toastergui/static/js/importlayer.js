@@ -18,10 +18,38 @@ function importLayerPageInit (ctx) {
 
   libtoaster.makeTypeahead(layerDepInput, libtoaster.ctx.layersTypeAheadUrl, { include_added: "true" }, function(item){
     currentLayerDepSelection = item;
-
-    layerDepBtn.removeAttr("disabled");
   });
 
+  // choices available in the typeahead
+  var layerDepsChoices = {};
+
+  // when the typeahead choices change, store an array of the available layer
+  // choices locally, to use for enabling/disabling the "Add layer" button
+  layerDepInput.on("typeahead-choices-change", function (event, data) {
+    layerDepsChoices = {};
+
+    if (data.choices) {
+      data.choices.forEach(function (item) {
+        layerDepsChoices[item.name] = item;
+      });
+    }
+  });
+
+  // disable the "Add layer" button when the layer input typeahead is empty
+  // or not in the typeahead choices
+  layerDepInput.on("input change", function () {
+    // get the choices from the typeahead
+    var choice = layerDepsChoices[$(this).val()];
+
+    if (choice) {
+      layerDepBtn.removeAttr("disabled");
+      currentLayerDepSelection = choice;
+    }
+    else {
+      layerDepBtn.attr("disabled","disabled");
+      currentLayerDepSelection = undefined;
+    }
+  });
 
   /* We automatically add "openembedded-core" layer for convenience as a
    * dependency as pretty much all layers depend on this one
@@ -42,7 +70,7 @@ function importLayerPageInit (ctx) {
     layerDeps[currentLayerDepSelection.id] = currentLayerDepSelection;
 
     /* Make a list item for the new layer dependency */
-    var newLayerDep = $("<li><a></a><span class=\"icon-trash\" data-toggle=\"tooltip\" title=\"Delete\"></span></li>");
+    var newLayerDep = $("<li><a></a><span class=\"glyphicon glyphicon-trash\" data-toggle=\"tooltip\" title=\"Remove\"></span></li>");
 
     newLayerDep.data('layer-id', currentLayerDepSelection.id);
     newLayerDep.children("span").tooltip();
@@ -77,7 +105,8 @@ function importLayerPageInit (ctx) {
       }, null);
   });
 
-  importAndAddBtn.click(function(){
+  importAndAddBtn.click(function(e){
+    e.preventDefault();
     /* This is a list of the names from layerDeps for the layer deps
      * modal dialog body
      */
@@ -234,7 +263,7 @@ function importLayerPageInit (ctx) {
 
   layerNameInput.on('input', function() {
     if ($(this).val() && !validLayerName.test($(this).val())){
-      layerNameCtrl.addClass("error")
+      layerNameCtrl.addClass("has-error")
       $("#invalid-layer-name-hint").show();
       enable_import_btn(false);
       return;
@@ -251,7 +280,7 @@ function importLayerPageInit (ctx) {
      * reason.
      */
     if (!duplicatedLayerName.is(":visible"))
-      layerNameCtrl.removeClass("error")
+      layerNameCtrl.removeClass("has-error")
 
     $("#invalid-layer-name-hint").hide();
     check_form();

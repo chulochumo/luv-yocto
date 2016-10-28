@@ -26,7 +26,6 @@ EXTRA_OECONF += "\
     --enable-loopback \
     --enable-ethernet \
     --enable-tools \
-    --enable-test \
     --disable-polkit \
     --enable-client \
 "
@@ -69,11 +68,6 @@ python __anonymous () {
 SYSTEMD_SERVICE_${PN} = "connman.service"
 SYSTEMD_SERVICE_${PN}-vpn = "connman-vpn.service"
 SYSTEMD_SERVICE_${PN}-wait-online = "connman-wait-online.service"
-SYSTEMD_WIRED_SETUP = "ExecStartPre=-${datadir}/connman/wired-setup"
-
-do_compile_append() {
-	sed -i "s#ExecStart=#${SYSTEMD_WIRED_SETUP}\nExecStart=#" ${B}/src/connman.service
-}
 
 do_install_append() {
 	if ${@bb.utils.contains('DISTRO_FEATURES','sysvinit','true','false',d)}; then
@@ -145,10 +139,7 @@ PACKAGES =+ "${PN}-tools ${PN}-tests ${PN}-client"
 FILES_${PN}-tools = "${bindir}/wispr"
 RDEPENDS_${PN}-tools ="${PN}"
 
-FILES_${PN}-tests = "${bindir}/*-test ${libdir}/${BPN}/test/*"
-RDEPENDS_${PN}-tests = "python-dbus python-pygobject python-textutils python-subprocess python-fcntl python-netclient \
-                        ${PN} \
-"
+FILES_${PN}-tests = "${bindir}/*-test"
 
 FILES_${PN}-client = "${bindir}/connmanctl"
 RDEPENDS_${PN}-client ="${PN}"

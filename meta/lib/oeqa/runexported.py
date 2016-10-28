@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 
 # Copyright (C) 2013 Intel Corporation
@@ -30,9 +30,9 @@ except ImportError:
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "oeqa")))
 
-from oeqa.oetest import runTests
+from oeqa.oetest import ExportTestContext
+from oeqa.utils.commands import runCmd
 from oeqa.utils.sshcontrol import SSHControl
-from oeqa.utils.dump import get_host_dumper
 
 # this isn't pretty but we need a fake target object
 # for running the tests externally as we don't care
@@ -49,7 +49,7 @@ class FakeTarget(object):
     def exportStart(self):
         self.sshlog = os.path.join(self.testdir, "ssh_target_log.%s" % self.datetime)
         sshloglink = os.path.join(self.testdir, "ssh_target_log")
-        if os.path.exists(sshloglink):
+        if os.path.lexists(sshloglink):
             os.remove(sshloglink)
         os.symlink(self.sshlog, sshloglink)
         print("SSH log file: %s" %  self.sshlog)
@@ -68,11 +68,6 @@ class FakeTarget(object):
 class MyDataDict(dict):
     def getVar(self, key, unused = None):
         return self.get(key, "")
-
-class TestContext(object):
-    def __init__(self):
-        self.d = None
-        self.target = None
 
 def main():
 
@@ -112,27 +107,49 @@ def main():
         if not os.path.isdir(d["DEPLOY_DIR"]):
             print("WARNING: The path to DEPLOY_DIR does not exist: %s" % d["DEPLOY_DIR"])
 
+    extract_sdk(d)
 
     target = FakeTarget(d)
     for key in loaded["target"].keys():
         setattr(target, key, loaded["target"][key])
 
-    host_dumper = get_host_dumper(d)
-    host_dumper.parent_dir = loaded["host_dumper"]["parent_dir"]
-    host_dumper.cmds = loaded["host_dumper"]["cmds"]
-
-    tc = TestContext()
-    setattr(tc, "d", d)
-    setattr(tc, "target", target)
-    setattr(tc, "host_dumper", host_dumper)
-    for key in loaded.keys():
-        if key != "d" and key != "target" and key != "host_dumper":
-            setattr(tc, key, loaded[key])
-
     target.exportStart()
-    runTests(tc)
+    tc = ExportTestContext(d, target, True)
+    tc.loadTests()
+    tc.runTests()
 
     return 0
+
+def extract_sdk(d):
+    """
+    Extract SDK if needed
+    """
+
+    export_dir = os.path.dirname(os.path.realpath(__file__))
+    tools_dir = d.getVar("TEST_EXPORT_SDK_DIR", True)
+    tarball_name = "%s.sh" % d.getVar("TEST_EXPORT_SDK_NAME", True)
+    tarball_path = os.path.join(export_dir, tools_dir, tarball_name)
+    extract_path = os.path.join(export_dir, "sysroot")
+    if os.path.isfile(tarball_path):
+        print ("Found SDK tarball %s. Extracting..." % tarball_path)
+        result = runCmd("%s -y -d %s" % (tarball_path, extract_path))
+        for f in os.listdir(extract_path):
+            if f.startswith("environment-setup"):
+                print("Setting up SDK environment...")
+                env_file = os.path.join(extract_path, f)
+                update_env(env_file)
+
+def update_env(env_file):
+    """
+    Source a file and update environment
+    """
+
+    cmd = ". %s; env -0" % env_file
+    result = runCmd(cmd)
+
+    for line in result.output.split("\0"):
+        (key, _, value) = line.partition("=")
+        os.environ[key] = value
 
 if __name__ == "__main__":
     try:
@@ -140,5 +157,5 @@ if __name__ == "__main__":
     except Exception:
         ret = 1
         import traceback
-        traceback.print_exc(5)
+        traceback.print_exc()
     sys.exit(ret)

@@ -4,7 +4,7 @@
 
 
 # DESCRIPTION
-# Base class inherited by test classes in meta/lib/selftest
+# Base class inherited by test classes in meta/lib/oeqa/selftest
 
 import unittest
 import os
@@ -67,7 +67,7 @@ class oeSelfTest(unittest.TestCase):
                 machine = custommachine
             machine_conf = 'MACHINE ??= "%s"\n' % machine
             self.set_machine_config(machine_conf)
-            print 'MACHINE: %s' % machine
+            print('MACHINE: %s' % machine)
 
         # tests might need their own setup
         # but if they overwrite this one they have to call

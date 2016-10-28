@@ -33,8 +33,13 @@
         <revhistory>
             <revision>
                 <revnumber>2.1</revnumber>
+                <date>April 2016</date>
+                <revremark>Released with the Yocto Project 2.1 Release.</revremark>
+            </revision>
+            <revision>
+                <revnumber>2.2</revnumber>
                 <date>Sometime in 2016</date>
-                <revremark>Released with the future Yocto Project 2.1 Release.</revremark>
+                <revremark>Released with the Yocto Project 2.2 Release.</revremark>
             </revision>
        </revhistory>
 
@@ -64,6 +69,10 @@
     <xi:include href="sdk-using.xml"/>
 
     <xi:include href="sdk-extensible.xml"/>
+
+    <xi:include href="sdk-appendix-obtain.xml"/>
+
+    <xi:include href="sdk-appendix-customizing.xml"/>
 
 <!--    <index id='index'>
       <title>Index</title>

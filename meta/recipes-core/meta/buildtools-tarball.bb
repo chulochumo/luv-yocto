@@ -1,4 +1,4 @@
-DESCRIPTION = "SDK type target for building a standalone tarball containing python, chrpath, make, git and tar. The \
+DESCRIPTION = "SDK type target for building a standalone tarball containing python3, chrpath, make, git and tar. The \
                tarball can be used to run bitbake builds on systems which don't meet the usual version requirements."
 SUMMARY = "Standalone tarball for running builds on systems with inadequate software"
 LICENSE = "MIT"
@@ -8,11 +8,10 @@ LIC_FILES_CHKSUM = "file://${COREBASE}/LICENSE;md5=4d92cd373abda3937c2bc47fbc49d
 TOOLCHAIN_TARGET_TASK ?= ""
 
 TOOLCHAIN_HOST_TASK ?= "\
-    nativesdk-python-core \
-    nativesdk-python-modules \
-    nativesdk-python-misc \
-    nativesdk-python-git \
-    nativesdk-python-pexpect \
+    nativesdk-python3-core \
+    nativesdk-python3-modules \
+    nativesdk-python3-misc \
+    nativesdk-python3-git \
     nativesdk-ncurses-terminfo-base \
     nativesdk-chrpath \
     nativesdk-tar \
@@ -23,9 +22,11 @@ TOOLCHAIN_HOST_TASK ?= "\
     nativesdk-make \
     nativesdk-wget \
     nativesdk-ca-certificates \
+    nativesdk-texinfo \
+    nativesdk-locale-base-en-us \
     "
 
-SDK_PACKAGE_ARCHS =+ "buildtools-dummy-${SDKPKGSUFFIX}"
+SDK_PACKAGE_ARCHS += "buildtools-dummy-${SDKPKGSUFFIX}"
 
 TOOLCHAIN_OUTPUTNAME ?= "${SDK_NAME}-buildtools-nativesdk-standalone-${DISTRO_VERSION}"
 
@@ -57,9 +58,15 @@ create_sdk_files_append () {
 
 	echo 'export GIT_SSL_CAINFO="${SDKPATHNATIVE}${sysconfdir}/ssl/certs/ca-certificates.crt"' >>$script
 
-	if [ ${SDKMACHINE} = "i686" ]; then
+	if [ "${SDKMACHINE}" = "i686" ]; then
 		echo 'export NO32LIBS="0"' >>$script
 		echo 'echo "$BB_ENV_EXTRAWHITE" | grep -q "NO32LIBS"' >>$script
 		echo '[ $? != 0 ] && export BB_ENV_EXTRAWHITE="NO32LIBS $BB_ENV_EXTRAWHITE"' >>$script
 	fi
 }
+
+# buildtools-tarball doesn't need config site
+TOOLCHAIN_NEED_CONFIGSITE_CACHE = ""
+
+# The recipe doesn't need any default deps
+INHIBIT_DEFAULT_DEPS = "1"

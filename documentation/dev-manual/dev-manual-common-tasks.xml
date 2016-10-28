@@ -72,7 +72,7 @@
                 <filename>meta</filename>,
                 <filename>meta-skeleton</filename>,
                 <filename>meta-selftest</filename>,
-                <filename>meta-yocto</filename>, and
+                <filename>meta-poky</filename>, and
                 <filename>meta-yocto-bsp</filename>.
                 Each of these folders represents a distinct layer.
             </para>
@@ -165,12 +165,12 @@
                                     directory to the
                                     <filename>BBPATH</filename>.
                                     On the other hand, distro layers, such as
-                                    <filename>meta-yocto</filename>, can choose
+                                    <filename>meta-poky</filename>, can choose
                                     to enforce their own precedence over
                                     <filename>BBPATH</filename>.
                                     For an example of that syntax, see the
                                     <filename>layer.conf</filename> file for
-                                    the <filename>meta-yocto</filename> layer.
+                                    the <filename>meta-poky</filename> layer.
                                 </note></para></listitem>
                             <listitem><para>The recipes for the layers are
                                 appended to
@@ -336,11 +336,12 @@
      DEPENDS_append_one = " foo"
      DEPENDS_prepend_one = "foo "
                             </literallayout>
-                            As an actual example, here's a line from the recipe for
-                            the OProfile profiler, which lists an extra build-time
-                            dependency when building specifically for 64-bit PowerPC:
+                            As an actual example, here's a line from the recipe
+                            for gnutls, which adds dependencies on
+                            "argp-standalone" when building with the musl C
+                            library:
                             <literallayout class='monospaced'>
-     DEPENDS_append_powerpc64 = " libpfm4"
+     DEPENDS_append_libc-musl = " argp-standalone"
                             </literallayout>
                             <note>
                                 Avoiding "+=" and "=+" and using
@@ -444,7 +445,7 @@
 
      BBLAYERS ?= " \
        $HOME/poky/meta \
-       $HOME/poky/meta-yocto \
+       $HOME/poky/meta-poky \
        $HOME/poky/meta-yocto-bsp \
        $HOME/poky/meta-mylayer \
        "
@@ -550,8 +551,8 @@
             <para>
                 Following is the append file, which is named
                 <filename>formfactor_0.0.bbappend</filename> and is from the
-                Emenlow BSP Layer named
-                <filename>meta-intel/meta-emenlow</filename>.
+                Raspberry Pi BSP Layer named
+                <filename>meta-raspberrypi</filename>.
                 The file is in <filename>recipes-bsp/formfactor</filename>:
                 <literallayout class='monospaced'>
      FILESEXTRAPATHS_prepend := "${THISDIR}/${PN}:"
@@ -577,7 +578,7 @@
                 which resolves to a directory named
                 <filename>formfactor</filename> in the same directory
                 in which the append file resides (i.e.
-                <filename>meta-intel/meta-emenlow/recipes-bsp/formfactor/formfactor</filename>.
+                <filename>meta-raspberrypi/recipes-bsp/formfactor/formfactor</filename>.
                 This implies that you must have the supporting directory
                 structure set up that will contain any files or patches you
                 will be including from the layer.
@@ -870,7 +871,7 @@
                 <literallayout class='monospaced'>
      BBLAYERS = ?" \
         /usr/local/src/yocto/meta \
-        /usr/local/src/yocto/meta-yocto \
+        /usr/local/src/yocto/meta-poky \
         /usr/local/src/yocto/meta-yocto-bsp \
         /usr/local/src/yocto/meta-mylayer \
         "
@@ -1566,7 +1567,7 @@
                         </note>
                         </para></listitem>
                     <listitem><para><emphasis>Using Variables: <filename>${...}</filename></emphasis> -
-                        Use the <filename>${<replaceable>varname</replaceable>}</filename> syntax to
+                        Use the <filename>${<replaceable>VARNAME</replaceable>}</filename> syntax to
                         access the contents of a variable:
                         <literallayout class='monospaced'>
      SRC_URI = "${SOURCEFORGE_MIRROR}/libpng/zlib-${PV}.tar.gz"
@@ -3495,14 +3496,7 @@
             </para>
 
             <para>
-                This section overviews the Multilib process only.
-                For more details on how to implement Multilib, see the
-                <ulink url='&YOCTO_WIKI_URL;/wiki/Multilib'>Multilib</ulink> wiki
-                page.
-            </para>
-
-            <para>
-                Aside from this wiki page, several examples exist in the
+                Several examples exist in the
                 <filename>meta-skeleton</filename> layer found in the
                <link linkend='source-directory'>Source Directory</link>:
                 <itemizedlist>
@@ -3603,8 +3597,39 @@
                 <title>Additional Implementation Details</title>
 
                 <para>
-                    Different packaging systems have different levels of native Multilib
-                    support.
+                    Generic implementation details as well as details that are
+                    specific to package management systems exist.
+                    Following are implementation details that exist regardless
+                    of the package management system:
+                    <itemizedlist>
+                        <listitem><para>The typical convention used for the
+                            class extension code as used by
+                            Multilib assumes that all package names specified
+                            in
+                            <ulink url='&YOCTO_DOCS_REF_URL;#var-PACKAGES'><filename>PACKAGES</filename></ulink>
+                            that contain <filename>${PN}</filename> have
+                            <filename>${PN}</filename> at the start of the name.
+                            When that convention is not followed and
+                            <filename>${PN}</filename> appears at
+                            the middle or the end of a name, problems occur.
+                            </para></listitem>
+                        <listitem><para>The
+                            <ulink url='&YOCTO_DOCS_REF_URL;#var-TARGET_VENDOR'><filename>TARGET_VENDOR</filename></ulink>
+                            value under Multilib will be extended to
+                            "-<replaceable>vendor</replaceable>ml<replaceable>multilib</replaceable>"
+                            (e.g. "-pokymllib32" for a "lib32" Multilib with
+                            Poky).
+                            The reason for this slightly unwieldy contraction
+                            is that any "-" characters in the vendor
+                            string presently break Autoconf's
+                            <filename>config.sub</filename>, and
+                            other separators are problematic for different
+                            reasons.
+                            </para></listitem>
+                    </itemizedlist>
+                </para>
+'
+                <para>
                     For the RPM Package Management System, the following implementation details
                     exist:
                     <itemizedlist>
@@ -3701,6 +3726,270 @@
         </section>
     </section>
 
+    <section id='enabling-gobject-introspection-support'>
+        <title>Enabling GObject Introspection Support</title>
+
+        <para>
+            <ulink url='https://wiki.gnome.org/Projects/GObjectIntrospection'>GObject introspection</ulink>
+            is the standard mechanism for accessing GObject-based software
+            from runtime environments.
+            GObject is a feature of the GLib library that provides an object
+            framework for the GNOME desktop and related software.
+            GObject Introspection adds information to GObject that allows
+            objects created within it to be represented across different
+            programming languages.
+            If you want to construct GStreamer pipelines using Python, or
+            control UPnP infrastructure using Javascript and GUPnP,
+            GObject introspection is the only way to do it.
+        </para>
+
+        <para>
+            This section describes the Yocto Project support for generating
+            and packaging GObject introspection data.
+            GObject introspection data is a description of the
+            API provided by libraries built on top of GLib framework,
+            and, in particular, that framework's GObject mechanism.
+            GObject Introspection Repository (GIR) files go to
+            <filename>-dev</filename> packages,
+            <filename>typelib</filename> files go to main packages as they
+            are packaged together with libraries that are introspected.
+        </para>
+
+        <para>
+            The data is generated when building such a library, by linking
+            the library with a small executable binary that asks the library
+            to describe itself, and then executing the binary and
+            processing its output.
+        </para>
+
+        <para>
+            Generating this data in a cross-compilation environment
+            is difficult because the library is produced for the target
+            architecture, but its code needs to be executed on the build host.
+            This problem is solved with the OpenEmbedded build system by
+            running the code through QEMU, which allows precisely that.
+            Unfortunately, QEMU does not always work perfectly as mentioned
+            in the xxx section.
+        </para>
+
+        <section id='enabling-the-generation-of-introspection-data'>
+            <title>Enabling the Generation of Introspection Data</title>
+
+            <para>
+                Enabling the generation of introspection data (GIR files)
+                in your library package involves the following:
+                <orderedlist>
+                    <listitem><para>
+                        Inherit the
+                        <ulink url='&YOCTO_DOCS_REF_URL;#ref-classes-gobject-introspection'><filename>gobject-introspection</filename></ulink>
+                        class.
+                        </para></listitem>
+                    <listitem><para>
+                        Make sure introspection is not disabled anywhere in
+                        the recipe or from anything the recipe includes.
+                        Also, make sure that "gobject-introspection-data" is
+                        not in
+                        <ulink url='&YOCTO_DOCS_REF_URL;#var-DISTRO_FEATURES_BACKFILL_CONSIDERED'><filename>DISTRO_FEATURES_BACKFILL_CONSIDERED</filename></ulink>
+                        and that "qemu-usermode" is not in
+                        <ulink url='&YOCTO_DOCS_REF_URL;#var-MACHINE_FEATURES_BACKFILL_CONSIDERED'><filename>MACHINE_FEATURES_BACKFILL_CONSIDERED</filename></ulink>.
+                        If either of these conditions exist, nothing will
+                        happen.
+                        </para></listitem>
+                    <listitem><para>
+                        Try to build the recipe.
+                        If you encounter build errors that look like
+                        something is unable to find
+                        <filename>.so</filename> libraries, check where these
+                        libraries are located in the source tree and add
+                        the following to the recipe:
+                        <literallayout class='monospaced'>
+     GIR_EXTRA_LIBS_PATH = "${B}/<replaceable>something</replaceable>/.libs"
+                        </literallayout>
+                        <note>
+                            See recipes in the <filename>oe-core</filename>
+                            repository that use that
+                            <filename>GIR_EXTRA_LIBS_PATH</filename> variable
+                            as an example.
+                        </note>
+                        </para></listitem>
+                    <listitem><para>
+                        Look for any other errors, which probably mean that
+                        introspection support in a package is not entirely
+                        standard, and thus breaks down in a cross-compilation
+                        environment.
+                        For such cases, custom-made fixes are needed.
+                        A good place to ask and receive help in these cases
+                        is the
+                        <ulink url='&YOCTO_DOCS_REF_URL;#resources-mailinglist'>Yocto Project mailing lists</ulink>.
+                        </para></listitem>
+                </orderedlist>
+                <note>
+                    Using a library that no longer builds against the latest
+                    Yocto Project release and prints introspection related
+                    errors is a good candidate for the previous procedure.
+                </note>
+            </para>
+        </section>
+
+        <section id='disabling-the-generation-of-introspection-data'>
+            <title>Disabling the Generation of Introspection Data</title>
+
+            <para>
+                You might find that you do not want to generate
+                introspection data.
+                Or, perhaps QEMU does not work on your build host and
+                target architecture combination.
+                If so, you can use either of the following methods to
+                disable GIR file generations:
+                <itemizedlist>
+                    <listitem><para>
+                        Add the following to your distro configuration:
+                        <literallayout class='monospaced'>
+     DISTRO_FEATURES_BACKFILL_CONSIDERED = "gobject-introspection-data"
+                        </literallayout>
+                        Adding this statement disables generating
+                        introspection data using QEMU but will still enable
+                        building introspection tools and libraries
+                        (i.e. building them does not require the use of QEMU).
+                        </para></listitem>
+                    <listitem><para>
+                        Add the following to your machine configuration:
+                        <literallayout class='monospaced'>
+     MACHINE_FEATURES_BACKFILL_CONSIDERED = "qemu-usermode"
+                        </literallayout>
+                        Adding this statement disables the use of QEMU
+                        when building packages for your machine.
+                        Currently, this feature is used only by introspection
+                        recipes and has the same effect as the previously
+                        described option.
+                        <note>
+                            Future releases of the Yocto Project might have
+                            other features affected by this option.
+                        </note>
+                        </para></listitem>
+                </itemizedlist>
+                If you disable introspection data, you can still
+                obtain it through other means such as copying the data
+                from a suitable sysroot, or by generating it on the
+                target hardware.
+                The OpenEmbedded build system does not currently
+                provide specific support for these techniques.
+            </para>
+        </section>
+
+        <section id='testing-that-introspection-works-in-an-image'>
+            <title>Testing that Introspection Works in an Image</title>
+
+            <para>
+                Use the following procedure to test if generating
+                introspection data is working in an image:
+                <orderedlist>
+                    <listitem><para>
+                        Make sure that "gobject-introspection-data" is not in
+                        <ulink url='&YOCTO_DOCS_REF_URL;#var-DISTRO_FEATURES_BACKFILL_CONSIDERED'><filename>DISTRO_FEATURES_BACKFILL_CONSIDERED</filename></ulink>
+                        and that "qemu-usermode" is not in
+                        <ulink url='&YOCTO_DOCS_REF_URL;#var-MACHINE_FEATURES_BACKFILL_CONSIDERED'><filename>MACHINE_FEATURES_BACKFILL_CONSIDERED</filename></ulink>.
+                        </para></listitem>
+                    <listitem><para>
+                        Build <filename>core-image-sato</filename>.
+                        </para></listitem>
+                    <listitem><para>
+                        Launch a Terminal and then start Python in the
+                        terminal.
+                        </para></listitem>
+                    <listitem><para>
+                        Enter the following in the terminal:
+                        <literallayout class='monospaced'>
+     >>> from gi.repository import GLib
+     >>> GLib.get_host_name()
+                        </literallayout>
+                        </para></listitem>
+                    <listitem><para>
+                        For something a little more advanced, enter the
+                        following:
+                        <literallayout class='monospaced'>
+     http://python-gtk-3-tutorial.readthedocs.org/en/latest/introduction.html
+                        </literallayout>
+                        </para></listitem>
+                </orderedlist>
+            </para>
+        </section>
+
+        <section id='known-issues'>
+            <title>Known Issues</title>
+
+            <para>
+                The following know issues exist for
+                GObject Introspection Support:
+                <itemizedlist>
+                    <listitem><para>
+                        <filename>qemu-ppc64</filename> immediately crashes.
+                        Consequently, you cannot build introspection data on
+                        that architecture.
+                        </para></listitem>
+                    <listitem><para>
+                        x32 is not supported by QEMU.
+                        Consequently, introspection data is disabled.
+                        </para></listitem>
+                    <listitem><para>
+                        musl causes transient GLib binaries to crash on
+                        assertion failures.
+                        Consequently, generating introspection data is
+                        disabled.
+                        </para></listitem>
+                    <listitem><para>
+                        Because QEMU is not able to run the binaries correctly,
+                        introspection is disabled for some specific packages
+                        under specific architectures (e.g.
+                        <filename>gcr</filename>,
+                        <filename>libsecret</filename>, and
+                        <filename>webkit</filename>).
+                        </para></listitem>
+                </itemizedlist>
+            </para>
+        </section>
+    </section>
+
+    <section id='dev-optionally-using-an-external-toolchain'>
+        <title>Optionally Using an External Toolchain</title>
+
+        <para>
+            You might want to use an external toolchain as part of your
+            development.
+            If this is the case, the fundamental steps you need to accomplish
+            are as follows:
+            <itemizedlist>
+                <listitem><para>
+                    Understand where the installed toolchain resides.
+                    For cases where you need to build the external toolchain,
+                    you would need to take separate steps to build and install
+                    the toolchain.
+                    </para></listitem>
+                <listitem><para>
+                    Make sure you add the layer that contains the toolchain to
+                    your <filename>bblayers.conf</filename> file through the
+                    <ulink url='&YOCTO_DOCS_REF_URL;#var-BBLAYERS'><filename>BBLAYERS</filename></ulink>
+                    variable.
+                    </para></listitem>
+                <listitem><para>
+                    Set the
+                    <ulink url='&YOCTO_DOCS_REF_URL;#var-EXTERNAL_TOOLCHAIN'><filename>EXTERNAL_TOOLCHAIN</filename></ulink>
+                    variable in your <filename>local.conf</filename> file
+                    to the location in which you installed the toolchain.
+                    </para></listitem>
+            </itemizedlist>
+            A good example of an external toolchain used with the Yocto Project
+            is <trademark class='registered'>Mentor Graphics</trademark>
+            Sourcery G++ Toolchain.
+            You can see information on how to use that particular layer in the
+            <filename>README</filename> file at
+            <ulink url='http://github.com/MentorEmbedded/meta-sourcery/'></ulink>.
+            You can find further information by reading about the
+            <ulink url='&YOCTO_DOCS_REF_URL;#var-TCMODE'><filename>TCMODE</filename></ulink>
+            variable in the Yocto Project Reference Manual's variable glossary.
+        </para>
+    </section>
+
     <section id='creating-partitioned-images'>
         <title>Creating Partitioned Images</title>
 
@@ -3737,10 +4026,10 @@
 	        it is based on is by definition incomplete.
             Its purpose is to allow the generation of customized images,
             and as such was designed to be completely extensible through a
-            plugin interface.
+            plug-in interface.
             See the
-            "<link linkend='openembedded-kickstart-plugins'>Plugins</link>"
-            section for information on these plugins.
+            "<link linkend='openembedded-kickstart-plugins'>Plug-ins</link>"
+            section for information on these plug-ins.
 	    </para>
 
         <para>
@@ -3779,8 +4068,8 @@
                         standalone utility that initially provides
                         easier-to-use and more flexible replacements for a
                         couple bits of existing functionality in OE Core's
-                        <filename>boot-directdisk.bbclass</filename> and
-                        <filename>mkefidisk.sh</filename> scripts.
+                        <ulink url='&YOCTO_DOCS_REF_URL;#ref-classes-image-live'><filename>image-live</filename></ulink>
+                        class and <filename>mkefidisk.sh</filename> script.
                         The difference between
                         <filename>wic</filename> and those examples is
                         that with <filename>wic</filename> the
@@ -3823,7 +4112,8 @@
                         in the form generated by the build system.
                         </para></listitem>
                     <listitem><para>
-                        You must build several native tools:
+                        You must build several native tools, which are tools
+                        built to run on the build system:
                         <literallayout class='monospaced'>
      $ bitbake parted-native dosfstools-native mtools-native
                         </literallayout>
@@ -4102,8 +4392,8 @@
                 </para>
 
                 <para>
-                    The output specifies the exact created as well as where
-                    it was created.
+                    The output specifies the exact image created as well as
+                    where it was created.
                     The output also names the artifacts used and the exact
                     <filename>.wks</filename> script that was used to generate
                     the image.
@@ -4301,21 +4591,21 @@
         </section>
 
         <section id='openembedded-kickstart-plugins'>
-            <title>Plugins</title>
+            <title>Plug-ins</title>
 
             <para>
-	            Plugins allow <filename>wic</filename> functionality to
+	            Plug-ins allow <filename>wic</filename> functionality to
 	            be extended and specialized by users.
                 This section documents the plugin interface, which is
-                currently restricted to source plugins.
+                currently restricted to source plug ins.
             </para>
 
             <para>
-	            Source plugins provide a mechanism to customize
+	            Source plug ins provide a mechanism to customize
 	            various aspects of the image generation process in
 	            <filename>wic</filename>, mainly the contents of
 	            partitions.
-	            The plugins provide a mechanism for mapping values
+	            The plug ins provide a mechanism for mapping values
 	            specified in <filename>.wks</filename> files using the
 	            <filename>--source</filename> keyword to a
                 particular plugin implementation that populates a
@@ -4491,11 +4781,18 @@
                 <title>Command: part or partition</title>
 
                 <para>
-                This command creates a partition on the system and uses the
-                following syntax:
+                Either of these commands create a partition on the system
+                and uses the following syntax:
                     <literallayout class='monospaced'>
-     part <replaceable>mntpoint</replaceable>
+     part [<replaceable>mntpoint</replaceable>]
+     partition [<replaceable>mntpoint</replaceable>]
                     </literallayout>
+                    If you do not provide
+                    <replaceable>mntpoint</replaceable>, wic creates a partition
+                    but does not mount it.
+                </para>
+
+                <para>
                     The <filename><replaceable>mntpoint</replaceable></filename>
                     is where the
                     partition will be mounted and must be of one of the
@@ -4503,16 +4800,36 @@
                     <itemizedlist>
                         <listitem><para><filename>/<replaceable>path</replaceable></filename>:
                             For example, <filename>/</filename>,
-                            <filename>/usr</filename>, and
+                            <filename>/usr</filename>, or
                             <filename>/home</filename></para></listitem>
                         <listitem><para><filename>swap</filename>:
-                            The partition will be used as swap space.
+                            The created partition is used as swap space.
                             </para></listitem>
                     </itemizedlist>
                 </para>
 
                 <para>
-                    Following are the supported options:
+                    Specifying a <replaceable>mntpoint</replaceable> causes
+                    the partition to automatically be mounted.
+                    Wic achieves this by adding entries to the filesystem
+                    table (fstab) during image generation.
+                    In order for wic to generate a valid fstab, you must
+                    also provide one of the <filename>--ondrive</filename>,
+                    <filename>--ondisk</filename>, or
+                    <filename>--use-uuid</filename> partition options as part
+                    of the command.
+                    Here is an example using "/" as the mountpoint.
+                    The command uses "--ondisk" to force the partition onto
+                    the <filename>sdb</filename> disk:
+                    <literallayout class='monospaced'>
+     part / --source rootfs --ondisk sdb --fstype=ext3 --label platform --align 1024
+                    </literallayout>
+                </para>
+
+                <para>
+                    Here is a list that describes other supported options you
+                    can use with the <filename>part</filename> and
+                    <filename>partition</filename> commands:
                     <itemizedlist>
                         <listitem><para><emphasis><filename>--size</filename>:</emphasis>
                             The minimum partition size in MBytes.
@@ -5021,7 +5338,7 @@
                         This configuration file will be your baseline.
                         </para></listitem>
                     <listitem><para>Separately run the
-                        <filename>do_configme</filename> and
+                        <filename>do_kernel_configme</filename> and
                         <filename>do_kernel_configcheck</filename> tasks.
                         </para></listitem>
                     <listitem><para>Take the resulting list of files from the
@@ -5049,7 +5366,7 @@
                     <listitem><para>
                         After you have worked through the output of the kernel
                         configuration audit, you can re-run the
-                        <filename>do_configme</filename> and
+                        <filename>do_kernel_configme</filename> and
                         <filename>do_kernel_configcheck</filename> tasks to
                         see the results of your changes.
                         If you have more issues, you can deal with them as
@@ -5063,6 +5380,112 @@
                 a minimal, streamlined configuration file.
                 Once you have the best <filename>.config</filename>, you can build the Linux
                 Yocto kernel.
+            </para>
+        </section>
+
+        <section id='determining-hardware-and-non-hardware-features-for-the-kernel-configuration-audit-phase'>
+            <title>Determining Hardware and Non-Hardware Features for the Kernel Configuration Audit Phase</title>
+
+            <para>
+                This section describes part of the kernel configuration audit
+                phase that most developers can ignore.
+                During this part of the audit phase, the contents of the final
+                <filename>.config</filename> file are compared against the
+                fragments specified by the system.
+                These fragments can be system fragments, distro fragments,
+                or user specified configuration elements.
+                Regardless of their origin, the OpenEmbedded build system
+                warns the user if a specific option is not included in the
+                final kernel configuration.
+            </para>
+
+            <para>
+                In order to not overwhelm the user with configuration warnings,
+                by default the system only reports on missing "hardware"
+                options because a missing hardware option could mean a boot
+                failure or that important hardware is not available.
+            </para>
+
+            <para>
+                To determine whether or not a given option is "hardware" or
+                "non-hardware", the kernel Metadata contains files that
+                classify individual or groups of options as either hardware
+                or non-hardware.
+                To better show this, consider a situation where the
+                Yocto Project kernel cache contains the following files:
+                <literallayout class='monospaced'>
+     kernel-cache/features/drm-psb/hardware.cfg
+     kernel-cache/features/kgdb/hardware.cfg
+     kernel-cache/ktypes/base/hardware.cfg
+     kernel-cache/bsp/mti-malta32/hardware.cfg
+     kernel-cache/bsp/fsl-mpc8315e-rdb/hardware.cfg
+     kernel-cache/bsp/qemu-ppc32/hardware.cfg
+     kernel-cache/bsp/qemuarma9/hardware.cfg
+     kernel-cache/bsp/mti-malta64/hardware.cfg
+     kernel-cache/bsp/arm-versatile-926ejs/hardware.cfg
+     kernel-cache/bsp/common-pc/hardware.cfg
+     kernel-cache/bsp/common-pc-64/hardware.cfg
+     kernel-cache/features/rfkill/non-hardware.cfg
+     kernel-cache/ktypes/base/non-hardware.cfg
+     kernel-cache/features/aufs/non-hardware.kcf
+     kernel-cache/features/ocf/non-hardware.kcf
+     kernel-cache/ktypes/base/non-hardware.kcf
+     kernel-cache/ktypes/base/hardware.kcf
+     kernel-cache/bsp/qemu-ppc32/hardware.kcf
+                </literallayout>
+                The following list provides explanations for the various
+                files:
+                <itemizedlist>
+                    <listitem><para><filename>hardware.kcf</filename>:
+                        Specifies a list of kernel Kconfig files that contain
+                        hardware options only.
+                        </para></listitem>
+                    <listitem><para><filename>non-hardware.kcf</filename>:
+                        Specifies a list of kernel Kconfig files that contain
+                        non-hardware options only.
+                        </para></listitem>
+                    <listitem><para><filename>hardware.cfg</filename>:
+                        Specifies a list of kernel
+                        <filename>CONFIG_</filename> options that are hardware,
+                        regardless of whether or not they are within a Kconfig
+                        file specified by a hardware or non-hardware
+                        Kconfig file (i.e. <filename>hardware.kcf</filename> or
+                        <filename>non-hardware.kcf</filename>).
+                        </para></listitem>
+                    <listitem><para><filename>non-hardware.cfg</filename>:
+                        Specifies a list of kernel
+                        <filename>CONFIG_</filename> options that are
+                        not hardware, regardless of whether or not they are
+                        within a Kconfig file specified by a hardware or
+                        non-hardware Kconfig file (i.e.
+                        <filename>hardware.kcf</filename> or
+                        <filename>non-hardware.kcf</filename>).
+                        </para></listitem>
+                </itemizedlist>
+                Here is a specific example using the
+                <filename>kernel-cache/bsp/mti-malta32/hardware.cfg</filename>:
+                <literallayout class='monospaced'>
+     CONFIG_SERIAL_8250
+     CONFIG_SERIAL_8250_CONSOLE
+     CONFIG_SERIAL_8250_NR_UARTS
+     CONFIG_SERIAL_8250_PCI
+     CONFIG_SERIAL_CORE
+     CONFIG_SERIAL_CORE_CONSOLE
+     CONFIG_VGA_ARB
+                </literallayout>
+                The kernel configuration audit automatically detects these
+                files (hence the names must be exactly the ones discussed here),
+                and uses them as inputs when generating warnings about the
+                final <filename>.config</filename> file.
+            </para>
+
+            <para>
+                A user-specified kernel Metadata repository, or recipe space
+                feature, can use these same files to classify options that are
+                found within its <filename>.cfg</filename> files as hardware
+                or non-hardware, to prevent the OpenEmbedded build system from
+                producing an error or warning when an option is not in the
+                final <filename>.config</filename> file.
             </para>
         </section>
     </section>
@@ -5313,14 +5736,14 @@
                         <filename>poky/build/conf</filename> directory needs to have the path to your local
                         <filename>meta-mylayer</filename> layer.
                         By default, the <filename>BBLAYERS</filename> variable contains paths to
-                        <filename>meta</filename>, <filename>meta-yocto</filename>, and
+                        <filename>meta</filename>, <filename>meta-poky</filename>, and
                         <filename>meta-yocto-bsp</filename> in the
                         <filename>poky</filename> Git repository.
                         Add the path to your <filename>meta-mylayer</filename> location:
                         <literallayout class='monospaced'>
      BBLAYERS ?= " \
        $HOME/poky/meta \
-       $HOME/poky/meta-yocto \
+       $HOME/poky/meta-poky \
        $HOME/poky/meta-yocto-bsp \
        $HOME/poky/meta-mylayer \
        "
@@ -5423,10 +5846,6 @@
                 <listitem><para><emphasis>
                     "<ulink url='http://elinux.org/images/6/6f/Security-issues.pdf'>Security Issues for Embedded Devices</ulink>"</emphasis>
                     by Jake Edge
-                    </para></listitem>
-                <listitem><para><emphasis>
-                    "<ulink url='https://www.nccgroup.com/media/18475/exploiting_security_gateways_via_their_web_interfaces.pdf'>They ought to know better: Exploiting Security Gateways via their Web Interfaces</ulink>"</emphasis>
-                    by Ben Williams
                     </para></listitem>
             </itemizedlist>
         </para>
@@ -5793,7 +6212,7 @@
             By default, <filename>TEMPLATECONF</filename> is set as
             follows in the <filename>poky</filename> repository:
             <literallayout class='monospaced'>
-     TEMPLATECONF=${TEMPLATECONF:-meta-yocto/conf}
+     TEMPLATECONF=${TEMPLATECONF:-meta-poky/conf}
             </literallayout>
             This is the directory used by the build system to find templates
             from which to build some key configuration files.
@@ -5845,7 +6264,7 @@
         <para>
             Aside from the <filename>*.sample</filename> configuration files,
             the <filename>conf-notes.txt</filename> also resides in the
-            default <filename>meta-yocto/conf</filename> directory.
+            default <filename>meta-poky/conf</filename> directory.
             The scripts that set up the build environment
             (i.e.
             <ulink url="&YOCTO_DOCS_REF_URL;#structure-core-script"><filename>&OE_INIT_FILE;</filename></ulink>
@@ -5868,7 +6287,6 @@
          core-image-minimal
          core-image-sato
          meta-toolchain
-         adt-installer
          meta-ide-support
             </literallayout>
         </para>
@@ -7110,27 +7528,48 @@
                 <title>Build Considerations</title>
 
                 <para>
-                    This section describes build considerations that you need
-                    to be aware of in order to provide support for runtime
+                    This section describes build considerations of which you
+                    need to be aware in order to provide support for runtime
                     package management.
                 </para>
 
                 <para>
-                    When BitBake generates packages it needs to know
+                    When BitBake generates packages, it needs to know
                     what format or formats to use.
                     In your configuration, you use the
                     <ulink url='&YOCTO_DOCS_REF_URL;#var-PACKAGE_CLASSES'><filename>PACKAGE_CLASSES</filename></ulink>
-                    variable to specify the format.
-                    <note>
-                        You can choose to have more than one format but you must
-                        provide at least one.
-                    </note>
+                    variable to specify the format:
+                    <orderedlist>
+                        <listitem><para>
+                            Open the <filename>local.conf</filename> file
+                            inside your
+                            <link linkend='build-directory'>Build Directory</link>
+                            (e.g. <filename>~/poky/build/conf/local.conf</filename>).
+                            </para></listitem>
+                        <listitem><para>
+                            Select the desired package format as follows:
+                            <literallayout class='monospaced'>
+     PACKAGE_CLASSES ?= “package_<replaceable>packageformat</replaceable>”
+                            </literallayout>
+                            where <replaceable>packageformat</replaceable>
+                            can be "ipk", "rpm", and "deb", which are the
+                            supported package formats.
+                            <note>
+                                Because the Yocto Project supports three
+                                different package formats, you can set the
+                                variable with more than one argument.
+                                However, the OpenEmbedded build system only
+                                uses the first argument when creating an image
+                                or Software Development Kit (SDK).
+                            </note>
+                            </para></listitem>
+                    </orderedlist>
                 </para>
 
                 <para>
                     If you would like your image to start off with a basic
-                    package database of the packages in your current build
-                    as well as have the relevant tools available on the
+                    package database containing the packages in your current
+                    build as well as to have the relevant tools available on the
                     target for runtime package management, you can include
                     "package-management" in the
                     <ulink url='&YOCTO_DOCS_REF_URL;#var-IMAGE_FEATURES'><filename>IMAGE_FEATURES</filename></ulink>
@@ -7165,9 +7604,9 @@
                     <literallayout class='monospaced'>
     $ bitbake <replaceable>some-package</replaceable> package-index
                     </literallayout>
-                    This is because BitBake does not properly schedule the
-                    <filename>package-index</filename> target fully after any
-                    other target has completed.
+                    The reason for this restriction is because BitBake does not
+                    properly schedule the <filename>package-index</filename>
+                    target fully after any other target has completed.
                     Thus, be sure to run the package update step separately.
                 </para>
 
@@ -7183,9 +7622,10 @@
 
                 <para>
                     When your build is complete, your packages reside in the
-                    <filename>${TMPDIR}/deploy/<replaceable>package-format</replaceable></filename>
+                    <filename>${TMPDIR}/deploy/<replaceable>packageformat</replaceable></filename>
                     directory.
-                    For example, if <filename>${TMPDIR}</filename>
+                    For example, if
+                    <filename>${</filename><ulink url='&YOCTO_DOCS_REF_URL;#var-TMPDIR'><filename>TMPDIR</filename></ulink><filename>}</filename>
                     is <filename>tmp</filename> and your selected package type
                     is IPK, then your IPK packages are available in
                     <filename>tmp/deploy/ipk</filename>.
@@ -7196,121 +7636,38 @@
                 <title>Host or Server Machine Setup</title>
 
                 <para>
-                    Typically, packages are served from a server using
-                    HTTP.
-                    However, other protocols are possible.
-                    If you want to use HTTP, then setup and configure a
-                    web server, such as Apache 2 or lighttpd, on the machine
-                    serving the packages.
+                    Although other protocols are possible, a server using HTTP
+                    typically serves packages.
+                    If you want to use HTTP, then set up and configure a
+                    web server such as Apache 2, lighttpd, or
+                    SimpleHTTPServer on the machine serving the packages.
                 </para>
 
                 <para>
-                    As previously mentioned, the build machine can act as the
-                    package server.
-                    In the following sections that describe server machine
-                    setups, the build machine is assumed to also be the server.
+                    To keep things simple, this section describes how to set
+                    up a SimpleHTTPServer web server to share package feeds
+                    from the developer's machine.
+                    Although this server might not be the best for a production
+                    environment, the setup is simple and straight forward.
+                    Should you want to use a different server more suited for
+                    production (e.g. Apache 2, Lighttpd, or Nginx), take the
+                    appropriate steps to do so.
                 </para>
 
-                <section id='package-server-apache'>
-                    <title>Serving Packages via Apache 2</title>
-
-                    <para>
-                        This example assumes you are using the Apache 2
-                        server:
-                        <orderedlist>
-                            <listitem><para>
-                                Add the directory to your Apache
-                                configuration, which you can find at
-                                <filename>/etc/httpd/conf/httpd.conf</filename>.
-                                Use commands similar to these on the
-                                development system.
-                                These example commands assume a top-level
-                                <link linkend='source-directory'>Source Directory</link>
-                                named <filename>poky</filename> in your home
-                                directory.
-                                The example also assumes an RPM package type.
-                                If you are using a different package type, such
-                                as IPK, use "ipk" in the pathnames:
-                                <literallayout class='monospaced'>
-     &lt;VirtualHost *:80&gt;
-       ....
-         Alias /rpm ~/poky/build/tmp/deploy/rpm
-         &lt;Directory "~/poky/build/tmp/deploy/rpm"&gt;
-           Options +Indexes
-         &lt;/Directory&gt;
-     &lt;/VirtualHost&gt;
-                                </literallayout></para></listitem>
-                            <listitem><para>
-                                Reload the Apache configuration as described
-                                in this step.
-                                For all commands, be sure you have root
-                                privileges.
-                                </para>
-
-                                <para>
-                                If your development system is using Fedora or
-                                CentOS, use the following:
-                                <literallayout class='monospaced'>
-     # service httpd reload
-                                </literallayout>
-                                For Ubuntu and Debian, use the following:
-                                <literallayout class='monospaced'>
-     # /etc/init.d/apache2 reload
-                                </literallayout>
-                                For OpenSUSE, use the following:
-                                <literallayout class='monospaced'>
-     # /etc/init.d/apache2 reload
-                                </literallayout></para></listitem>
-                            <listitem><para>
-                                If you are using Security-Enhanced Linux
-                                (SELinux), you need to label the files as
-                                being accessible through Apache.
-                                Use the following command from the development
-                                host.
-                                This example assumes RPM package types:
-                                <literallayout class='monospaced'>
-     # chcon -R -h -t httpd_sys_content_t tmp/deploy/rpm
-                                </literallayout></para></listitem>
-                        </orderedlist>
-                    </para>
-                </section>
-
-                <section id='package-server-lighttpd'>
-                    <title>Serving Packages via lighttpd</title>
-
-                    <para>
-                        If you are using lighttpd, all you need
-                        to do is to provide a link from your
-                        <filename>${TMPDIR}/deploy/<replaceable>package-format</replaceable></filename>
-                        directory to lighttpd's document-root.
-                        You can determine the specifics of your lighttpd
-                        installation by looking through its configuration file,
-                        which is usually found at:
-                        <filename>/etc/lighttpd/lighttpd.conf</filename>.
-                    </para>
-
-                    <para>
-                        For example, if you are using IPK, lighttpd's
-                        document-root is set to
-                        <filename>/var/www/lighttpd</filename>, and you had
-                        packages for a target named "BOARD",
-                        then you might create a link from your build location
-                        to lighttpd's document-root as follows:
-                        <literallayout class='monospaced'>
-    # ln -s $(PWD)/tmp/deploy/ipk /var/www/lighttpd/BOARD-dir
-                        </literallayout>
-                    </para>
-
-                    <para>
-                        At this point, you need to start the lighttpd server.
-                        The method used to start the server varies by
-                        distribution.
-                        However, one basic method that starts it by hand is:
-                        <literallayout class='monospaced'>
-    # lighttpd -f /etc/lighttpd/lighttpd.conf
-                        </literallayout>
-                    </para>
-                </section>
+                <para>
+                    From within the build directory where you have built an
+                    image based on your packaging choice (i.e. the
+                    <ulink url='&YOCTO_DOCS_REF_URL;#var-PACKAGE_CLASSES'><filename>PACKAGE_CLASSES</filename></ulink>
+                    setting), simply start the server.
+                    The following example assumes a build directory of
+                    <filename>~/poky/build/tmp/deploy/rpm</filename> and a
+                    <filename>PACKAGE_CLASSES</filename> setting of
+                    "package_rpm":
+                    <literallayout class='monospaced'>
+     $ cd ~/poky/build/tmp/deploy/rpm
+     $ python -m SimpleHTTPServer
+                    </literallayout>
+                </para>
             </section>
 
             <section id='runtime-package-management-target'>
@@ -7319,42 +7676,40 @@
                 <para>
                     Setting up the target differs depending on the
                     package management system.
-                    This section provides information for RPM and IPK.
+                    This section provides information for RPM, IPK, and DEB.
                 </para>
 
                 <section id='runtime-package-management-target-rpm'>
                     <title>Using RPM</title>
 
                     <para>
-                        The application for performing runtime package
-                        management of RPM packages on the target is called
-                        <filename>smart</filename>.
+                        The <filename>smart</filename> application performs
+                        runtime package management of RPM packages.
+                        You must perform an initial setup for
+                        <filename>smart</filename> on the target machine.
                     </para>
 
                     <para>
-                        On the target machine, you need to inform
-                        <filename>smart</filename> of every package database
-                        you want to use.
-                        As an example, suppose your target device can use the
-                        following three package databases from a server named
-                        <filename>server.name</filename>:
+                        As an example, assume the target is able to use the
+                        following package databases:
                         <filename>all</filename>, <filename>i586</filename>,
-                        and <filename>qemux86</filename>.
-                        Given this example, issue the following commands on the
-                        target:
+                        and <filename>qemux86</filename> from a server named
+                        <filename>my.server</filename>.
+                        You must inform <filename>smart</filename> of the
+                        availability of these databases by issuing the
+                        following commands on the target:
                         <literallayout class='monospaced'>
-     # smart channel --add all type=rpm-md baseurl=http://server.name/rpm/all
-     # smart channel --add i585 type=rpm-md baseurl=http://server.name/rpm/i586
-     # smart channel --add qemux86 type=rpm-md baseurl=http://server.name/rpm/qemux86
+     # smart channel --add i585 type=rpm-md baseurl=http://my.server/rpm/i586
+     # smart channel --add qemux86 type=rpm-md baseurl=http://my.server/rpm/qemux86
+     # smart channel --add all type=rpm-md baseurl=http://my.server/rpm/all
                         </literallayout>
-                        Also from the target machine, fetch the repository
-                        information using this command:
+                        From the target machine, fetch the repository:
                         <literallayout class='monospaced'>
      # smart update
                         </literallayout>
-                        You can now use the <filename>smart query</filename>
-                        and <filename>smart install</filename> commands to
-                        find and install packages from the repositories.
+                        After everything is set up, <filename>smart</filename>
+                        is able to find, install, and upgrade packages from
+                        the specified repository.
                     </para>
                 </section>
 
@@ -7362,61 +7717,87 @@
                     <title>Using IPK</title>
 
                     <para>
-                        The application for performing runtime package
-                        management of IPK packages on the target is called
-                        <filename>opkg</filename>.
+                        The <filename>opkg</filename> application performs
+                        runtime package management of IPK packages.
+                        You must perform an initial setup for
+                        <filename>opkg</filename> on the target machine.
                     </para>
 
                     <para>
-                        In order to inform <filename>opkg</filename> of the
-                        package databases you want to use, simply create one
-                        or more <filename>*.conf</filename> files in the
-                        <filename>/etc/opkg</filename> directory on the target.
-                        The <filename>opkg</filename> application uses them
-                        to find its available package databases.
-                        As an example, suppose you configured your HTTP server
-                        on your machine named
-                        <filename>www.mysite.com</filename> to serve files
-                        from a <filename>BOARD-dir</filename> directory under
-                        its document-root.
-                        In this case, you might create a configuration
-                        file on the target called
-                        <filename>/etc/opkg/base-feeds.conf</filename> that
-                        contains:
+                        The <filename>opkg</filename> application uses
+                        configuration files to find available package
+                        databases.
+                        Thus, you need to create a configuration file inside
+                        the <filename>/etc/opkg/</filename> direction, which
+                        informs <filename>opkg</filename> of any repository
+                        you want to use.
+                    </para>
+
+                    <para>
+                        As an example, suppose you are serving packages from a
+                        <filename>ipk/</filename> directory containing the
+                        <filename>i586</filename>,
+                        <filename>all</filename>, and
+                        <filename>qemux86</filename> databases through an
+                        HTTP server named <filename>my.server</filename>.
+                        On the target, create a configuration file
+                        (e.g. <filename>my_repo.conf</filename>) inside the
+                        <filename>/etc/opkg/</filename> directory containing
+                        the following:
                         <literallayout class='monospaced'>
-     src/gz all http://www.mysite.com/BOARD-dir/all
-     src/gz armv7a http://www.mysite.com/BOARD-dir/armv7a
-     src/gz beaglebone http://www.mysite.com/BOARD-dir/beaglebone
+     src/gz all http://my.server/ipk/all
+     src/gz i586 http://my.server/ipk/i586
+     src/gz qemux86 http://my.server/ipk/qemux86
                         </literallayout>
-                    </para>
-
-                    <para>
-                        As a way of making it easier to generate and make
-                        these IPK configuration files available on your
-                        target, simply define
-                        <ulink url='&YOCTO_DOCS_REF_URL;#var-FEED_DEPLOYDIR_BASE_URI'><filename>FEED_DEPLOYDIR_BASE_URI</filename></ulink>
-                        to point to your server and the location within the
-                        document-root which contains the databases.
-                        For example: if you are serving your packages over
-                        HTTP, your server's IP address is 192.168.7.1, and
-                        your databases are located in a directory called
-                        <filename>BOARD-dir</filename> underneath your HTTP
-                        server's document-root, you need to set
-                        <filename>FEED_DEPLOYDIR_BASE_URI</filename> to
-                        <filename>http://192.168.7.1/BOARD-dir</filename> and
-                        a set of configuration files will be generated for you
-                        in your target to work with this feed.
-                    </para>
-
-                    <para>
-                        On the target machine, fetch (or refresh) the
-                        repository information using this command:
+                        Next, instruct <filename>opkg</filename> to fetch
+                        the repository information:
                         <literallayout class='monospaced'>
      # opkg update
                         </literallayout>
-                        You can now use the <filename>opkg list</filename> and
-                        <filename>opkg install</filename> commands to find and
-                        install packages from the repositories.
+                        The <filename>opkg</filename> application is now able
+                        to find, install, and upgrade packages from the
+                        specified repository.
+                    </para>
+                </section>
+
+                <section id='runtime-package-management-target-deb'>
+                    <title>Using DEB</title>
+
+                    <para>
+                        The <filename>apt</filename> application performs
+                        runtime package management of DEB packages.
+                        This application uses a source list file to find
+                        available package databases.
+                        You must perform an initial setup for
+                        <filename>apt</filename> on the target machine.
+                    </para>
+
+                    <para>
+                        To inform <filename>apt</filename> of the repository
+                        you want to use, you might create a list file (e.g.
+                        <filename>my_repo.list</filename>) inside the
+                        <filename>/etc/apt/sources.list.d/</filename>
+                        directory.
+                        As an example, suppose you are serving packages from a
+                        <filename>deb/</filename> directory containing the
+                        <filename>i586</filename>,
+                        <filename>all</filename>, and
+                        <filename>qemux86</filename> databases through an
+                        HTTP server named <filename>my.server</filename>.
+                        The list file should contain:
+                        <literallayout class='monospaced'>
+     deb http://my.server/deb/all ./
+     deb http://my.server/deb/i586 ./
+     deb http://my.server/deb/qemux86 ./
+                        </literallayout>
+                        Next, instruct the <filename>apt</filename>
+                        application to fetch the repository information:
+                        <literallayout class='monospaced'>
+     # apt-get update
+                        </literallayout>
+                        After this step, <filename>apt</filename> is able
+                        to find, install, and upgrade packages from the
+                        specified repository.
                     </para>
                 </section>
             </section>
@@ -7488,8 +7869,8 @@
                 <title>Running ptest</title>
 
                 <para>
-                    The <filename>ptest-runner2</filename> package installs a
-                    program that loops through all installed ptest test
+                    The <filename>ptest-runner</filename> package installs a
+                    shell script that loops through all installed ptest test
                     suites and runs them in sequence.
                     Consequently, you might want to add this package to
                     your image.
@@ -7552,13 +7933,16 @@
                             Consequently, you usually need to add a
                             cross-compilation function to the package.
                             </para>
+
                             <para>Many packages based on Automake compile and
                             run the test suite by using a single command
                             such as <filename>make check</filename>.
-                            However, the native <filename>make check</filename>
+                            However, the host <filename>make check</filename>
                             builds and runs on the same computer, while
                             cross-compiling requires that the package is built
-                            on the host but executed on the target.
+                            on the host but executed for the target
+                            architecture (though often, as in the case for
+                            ptest, the execution occurs on the host).
                             The built version of Automake that ships with the
                             Yocto Project includes a patch that separates
                             building and execution.
@@ -8007,21 +8391,22 @@
             This line pulls in the listed include file that contains
             numerous lines of exactly that form:
             <literallayout class='monospaced'>
+     #SRCREV_pn-opkg-native ?= "${AUTOREV}"
+     #SRCREV_pn-opkg-sdk ?= "${AUTOREV}"
+     #SRCREV_pn-opkg ?= "${AUTOREV}"
+     #SRCREV_pn-opkg-utils-native ?= "${AUTOREV}"
+     #SRCREV_pn-opkg-utils ?= "${AUTOREV}"
      SRCREV_pn-gconf-dbus ?= "${AUTOREV}"
      SRCREV_pn-matchbox-common ?= "${AUTOREV}"
      SRCREV_pn-matchbox-config-gtk ?= "${AUTOREV}"
      SRCREV_pn-matchbox-desktop ?= "${AUTOREV}"
      SRCREV_pn-matchbox-keyboard ?= "${AUTOREV}"
-     SRCREV_pn-matchbox-panel ?= "${AUTOREV}"
      SRCREV_pn-matchbox-panel-2 ?= "${AUTOREV}"
      SRCREV_pn-matchbox-themes-extra ?= "${AUTOREV}"
      SRCREV_pn-matchbox-terminal ?= "${AUTOREV}"
      SRCREV_pn-matchbox-wm ?= "${AUTOREV}"
-     SRCREV_pn-matchbox-wm-2 ?= "${AUTOREV}"
      SRCREV_pn-settings-daemon ?= "${AUTOREV}"
      SRCREV_pn-screenshot ?= "${AUTOREV}"
-     SRCREV_pn-libfakekey ?= "${AUTOREV}"
-     SRCREV_pn-oprofileui ?= "${AUTOREV}"
           .
           .
           .
@@ -8142,7 +8527,8 @@
                         specific to or dependent on the target
                         architecture:</emphasis>
                         You can work around these attempts by using native
-                        tools to accomplish the same tasks, or
+                        tools, which run on the host system,
+                        to accomplish the same tasks, or
                         by alternatively running the processes under QEMU,
                         which has the <filename>qemu_run_binary</filename>
                         function.
@@ -8775,18 +9161,17 @@
                 in your <filename>local.conf</filename> file.
                 Be sure to provide the IP address you need:
                 <literallayout class='monospaced'>
-     TEST_EXPORT_ONLY = "1"
-     TEST_TARGET = "simpleremote"
+     INHERIT +="testexport"
      TEST_TARGET_IP = "192.168.7.2"
      TEST_SERVER_IP = "192.168.7.1"
                 </literallayout>
                 You can then export the tests with the following:
                 <literallayout class='monospaced'>
-     $ bitbake core-image-sato -c testimage
+     $ bitbake core-image-sato -c testexport
                 </literallayout>
                 Exporting the tests places them in the
                 <link linkend='build-directory'>Build Directory</link> in
-                <filename>tmp/testimage/core-image-sato</filename>, which
+                <filename>tmp/testexport/core-image-sato</filename>, which
                 is controlled by the
                 <filename>TEST_EXPORT_DIR</filename> variable.
             </para>
@@ -8794,37 +9179,9 @@
             <para>
                 You can now run the tests outside of the build environment:
                 <literallayout class='monospaced'>
-     $ cd tmp/testimage/core-image-sato
+     $ cd tmp/testexport/core-image-sato
      $ ./runexported.py testdata.json
                 </literallayout>
-                <note>
-                    This "export" feature does not deploy or boot the target
-                    image.
-                    Your target (be it a Qemu or hardware one)
-                    has to already be up and running when you call
-                    <filename>runexported.py</filename>
-                </note>
-            </para>
-
-            <para>
-                The exported data (i.e. <filename>testdata.json</filename>)
-                contains paths to the Build Directory.
-                Thus, the contents of the directory can be moved
-                to another machine as long as you update some paths in the
-                JSON.
-                Usually, you only care about the
-                <filename>${DEPLOY_DIR}/rpm</filename> directory
-                (assuming the RPM and Smart tests are enabled).
-                Consequently, running the tests on other machine
-                means that you have to move the contents and call
-                <filename>runexported.py</filename> with
-                "--deploy-dir <replaceable>path</replaceable>" as
-                follows:
-                <literallayout class='monospaced'>
-     ./runexported.py --deploy-dir /new/path/on/this/machine testdata.json
-                </literallayout>
-                <filename>runexported.py</filename> accepts other arguments
-                as well as described using <filename>--help</filename>.
             </para>
         </section>
 
@@ -8999,6 +9356,78 @@
                 </para>
             </section>
         </section>
+
+        <section id='installing-packages-in-the-dut-without-the-package-manager'>
+            <title>Installing Packages in the DUT Without the Package Manager</title>
+
+            <para>
+                When a test requires a package built by BitBake, it is possible
+                to install that package.
+                Installing the package does not require a package manager be
+                installed in the device under test (DUT).
+                It does, however, require an SSH connection and the target must
+                be using the <filename>sshcontrol</filename> class.
+                <note>
+                    This method uses <filename>scp</filename> to copy files
+                    from the host to the target, which causes permissions and
+                    special attributes to be lost.
+                </note>
+            </para>
+
+            <para>
+                A JSON file is used to define the packages needed by a test.
+                This file must be in the same path as the file used to define
+                the tests.
+                Furthermore, the filename must map directory to the test
+                module name with a <filename>.json</filename> extension.
+            </para>
+
+            <para>
+                The JSON file must include an object with the test name as
+                keys of an object or an array.
+                This object (or array of objects) uses the following data:
+                <itemizedlist>
+                    <listitem><para>"pkg" - A mandatory string that is the
+                        name of the package to be installed.
+                        </para></listitem>
+                    <listitem><para>"rm" - An optional boolean, which defaults
+                        to "false", that specifies to remove the package after
+                        the test.
+                        </para></listitem>
+                    <listitem><para>"extract" - An optional boolean, which
+                        defaults to "false", that specifies if the package must
+                        be extracted from the package format.
+                        When set to "true", the package is not automatically
+                        installed into the DUT.
+                        </para></listitem>
+                </itemizedlist>
+            </para>
+
+            <para>
+                Following is an example JSON file that handles test "foo"
+                installing package "bar" and test "foobar" installing
+                packages "foo" and "bar".
+                Once the test is complete, the packages are removed from the
+                DUT.
+                <literallayout class='monospaced'>
+     {
+         "": {
+             "pkg": "bar"
+         },
+         "foobar": [
+             {
+                 "pkg": "foo",
+                 "rm": true
+             },
+             {
+                 "pkg": "bar",
+                 "rm": true
+             }
+         ]
+     }
+                </literallayout>
+            </para>
+        </section>
     </section>
 
     <section id="platdev-gdb-remotedebug">
@@ -9088,11 +9517,8 @@
                 Before you can initiate a remote debugging session, you need
                 to be sure you have set up the cross-development environment,
                 toolchain, and sysroot.
-                The "<ulink url='&YOCTO_DOCS_ADT_URL;#adt-prepare'>Preparing for Application Development</ulink>"
-                chapter of the Yocto Project Application Developer's Guide
+                The <ulink url='&YOCTO_DOCS_SDK_URL;#sdk-intro'>Yocto Project Software Development Kit (SDK) Developer's Guide</ulink>
                 describes this process.
-                Be sure you have read that chapter and have set up
-                your environment.
             </para>
         </section>
 
@@ -9201,9 +9627,8 @@
                     location is at <filename>/opt/poky/&DISTRO;</filename>
                     and begins with the string "environment-setup".
                     For more information, see the
-                    "<ulink url='&YOCTO_DOCS_ADT_URL;#setting-up-the-cross-development-environment'>Setting Up the Cross-Development Environment</ulink>"
-                    section in the Yocto Project Application Developer's
-                    Guide.
+                    <ulink url='&YOCTO_DOCS_SDK_URL;#sdk-manual'>Yocto Project Software Development Kit (SDK) Developer's
+                    Guide</ulink>.
                 </para>
 
                 <para>
@@ -9541,6 +9966,7 @@
         </section>
     </section>
 
+<!--
     <section id="platdev-oprofile">
         <title>Profiling with OProfile</title>
 
@@ -9602,14 +10028,14 @@
 
             <para>
                 <literallayout class='monospaced'>
-     # opcontrol --reset
-     # opcontrol --start --separate=lib --no-vmlinux -c 5
+     # opcontrol &dash;&dash;reset
+     # opcontrol &dash;&dash;start &dash;&dash;separate=lib &dash;&dash;no-vmlinux -c 5
               .
               .
         [do whatever is being profiled]
               .
               .
-     # opcontrol --stop
+     # opcontrol &dash;&dash;stop
      $ opreport -cl
                 </literallayout>
             </para>
@@ -9622,7 +10048,7 @@
                 five levels deep.
                 <note>
                     To profile the kernel, you would specify the
-                    <filename>--vmlinux=/path/to/vmlinux</filename> option.
+                    <filename>&dash;&dash;vmlinux=/path/to/vmlinux</filename> option.
                     The <filename>vmlinux</filename> file is usually in the source directory in the
                     <filename>/boot/</filename> directory and must match the running kernel.
                 </note>
@@ -9685,7 +10111,7 @@
                     With this connection, you just need to run "oprofile-server" on the device.
                     By default, OProfile listens on port 4224.
                     <note>
-                        You can change the port using the <filename>--port</filename> command-line
+                        You can change the port using the <filename>&dash;&dash;port</filename> command-line
                         option.
                     </note>
                 </para>
@@ -9775,14 +10201,14 @@
                     If network access to the target is unavailable, you can generate
                     an archive for processing in <filename>oprofile-viewer</filename> as follows:
                     <literallayout class='monospaced'>
-     # opcontrol --reset
-     # opcontrol --start --separate=lib --no-vmlinux -c 5
+     # opcontrol &dash;&dash;reset
+     # opcontrol &dash;&dash;start &dash;&dash;separate=lib &dash;&dash;no-vmlinux -c 5
             .
             .
      [do whatever is being profiled]
             .
             .
-     # opcontrol --stop
+     # opcontrol &dash;&dash;stop
      # oparchive -o my_archive
                     </literallayout>
                 </para>
@@ -9797,6 +10223,7 @@
             </section>
         </section>
     </section>
+-->
 
     <section id='maintaining-open-source-license-compliance-during-your-products-lifecycle'>
         <title>Maintaining Open Source License Compliance During Your Product's Lifecycle</title>
@@ -9945,10 +10372,33 @@
                 <literallayout class='monospaced'>
      COPY_LIC_MANIFEST = "1"
      COPY_LIC_DIRS = "1"
+     LICENSE_CREATE_PACKAGE = "1"
                 </literallayout>
                 Adding these statements to the configuration file ensures
                 that the licenses collected during package generation
                 are included on your image.
+                <note>
+                    <para>Setting all three variables to "1" results in the
+                    image having two copies of the same license file.
+                    One copy resides in
+                    <filename>/usr/share/common-licenses</filename> and
+                    the other resides in
+                    <filename>/usr/share/license</filename>.</para>
+
+                    <para>The reason for this behavior is because
+                    <ulink url='&YOCTO_DOCS_REF_URL;#var-COPY_LIC_DIRS'><filename>COPY_LIC_DIRS</filename></ulink>
+                    and
+                    <ulink url='&YOCTO_DOCS_REF_URL;#var-COPY_LIC_MANIFEST'><filename>COPY_LIC_MANIFEST</filename></ulink>
+                    add a copy of the license when the image is built but do not
+                    offer a path for adding licenses for newly installed packages
+                    to an image.
+                    <ulink url='&YOCTO_DOCS_REF_URL;#var-LICENSE_CREATE_PACKAGE'><filename>LICENSE_CREATE_PACKAGE</filename></ulink>
+                    adds a separate package and an upgrade path for adding
+                    licenses to an image.</para>
+                </note>
+            </para>
+
+            <para>
                 As the source archiver has already archived the original
                 unmodified source that contains the license files,
                 you would have already met the requirements for inclusion
@@ -9987,8 +10437,8 @@
                 during your build.
                 Here is an example:
                 <literallayout class='monospaced'>
-     # We built using the &DISTRO_NAME; branch of the poky repo
-     $ git clone -b &DISTRO_NAME; git://git.yoctoproject.org/poky
+     # We built using the &DISTRO_NAME_NO_CAP; branch of the poky repo
+     $ git clone -b &DISTRO_NAME_NO_CAP; git://git.yoctoproject.org/poky
      $ cd poky
      # We built using the release_branch for our layers
      $ git clone -b release_branch git://git.mycompany.com/meta-my-bsp-layer
@@ -9998,7 +10448,7 @@
                 </literallayout>
                 One thing a development organization might want to consider
                 for end-user convenience is to modify
-                <filename>meta-yocto/conf/bblayers.conf.sample</filename> to
+                <filename>meta-poky/conf/bblayers.conf.sample</filename> to
                 ensure that when the end user utilizes the released build
                 system to build an image, the development organization's
                 layers are included in the <filename>bblayers.conf</filename>
@@ -10013,7 +10463,7 @@
 
      BBLAYERS ?= " \
        ##OEROOT##/meta \
-       ##OEROOT##/meta-yocto \
+       ##OEROOT##/meta-poky \
        ##OEROOT##/meta-yocto-bsp \
        ##OEROOT##/meta-mylayer \
        "

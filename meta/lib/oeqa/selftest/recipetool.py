@@ -1,7 +1,7 @@
 import os
 import logging
 import tempfile
-import urlparse
+import urllib.parse
 
 from oeqa.utils.commands import runCmd, bitbake, get_bb_var, create_temp_layer
 from oeqa.utils.decorators import testcase
@@ -278,7 +278,7 @@ class RecipetoolTests(RecipetoolBase):
                          '}\n']
         _, output = self._try_recipetool_appendfile('selftest-recipetool-appendfile', '/etc/selftest-replaceme-patched', self.testfile, '', expectedlines, ['testfile'])
         for line in output.splitlines():
-            if line.startswith('WARNING: '):
+            if 'WARNING: ' in line:
                 self.assertIn('add-file.patch', line, 'Unexpected warning found in output:\n%s' % line)
                 break
         else:
@@ -410,8 +410,10 @@ class RecipetoolTests(RecipetoolBase):
         srcuri = 'http://www.dest-unreach.org/socat/download/socat-%s.tar.bz2' % pv
         result = runCmd('recipetool create %s -o %s' % (srcuri, temprecipe))
         dirlist = os.listdir(temprecipe)
+        if len(dirlist) > 1:
+            self.fail('recipetool created more than just one file; output:\n%s\ndirlist:\n%s' % (result.output, str(dirlist)))
         if len(dirlist) < 1 or not os.path.isfile(os.path.join(temprecipe, dirlist[0])):
-            self.fail('recipetool did not create recipe file; output:\n%s' % result.output)
+            self.fail('recipetool did not create recipe file; output:\n%s\ndirlist:\n%s' % (result.output, str(dirlist)))
         self.assertEqual(dirlist[0], 'socat_%s.bb' % pv, 'Recipe file incorrectly named')
         checkvars = {}
         checkvars['LICENSE'] = set(['Unknown', 'GPLv2'])
@@ -422,6 +424,7 @@ class RecipetoolTests(RecipetoolBase):
         inherits = ['autotools']
         self._test_recipe_contents(os.path.join(temprecipe, dirlist[0]), checkvars, inherits)
 
+    @testcase(1418)
     def test_recipetool_create_cmake(self):
         # Try adding a recipe
         temprecipe = os.path.join(self.tempdir, 'recipe')
@@ -468,7 +471,7 @@ class RecipetoolAppendsrcBase(RecipetoolBase):
         '''Return the first file:// in SRC_URI for the specified recipe.'''
         src_uri = get_bb_var('SRC_URI', recipe).split()
         for uri in src_uri:
-            p = urlparse.urlparse(uri)
+            p = urllib.parse.urlparse(uri)
             if p.scheme == 'file':
                 return p.netloc + p.path
 

@@ -33,6 +33,10 @@ IMAGE_GEN_DEBUGFS ?= "0"
 # rootfs bootstrap install
 ROOTFS_BOOTSTRAP_INSTALL = "${@bb.utils.contains("IMAGE_FEATURES", "package-management", "", "${ROOTFS_PKGMANAGE_BOOTSTRAP}",d)}"
 
+# These packages will be removed from a read-only rootfs after all other
+# packages have been installed
+ROOTFS_RO_UNNEEDED = "update-rc.d base-passwd shadow ${VIRTUAL-RUNTIME_update-alternatives} ${ROOTFS_BOOTSTRAP_INSTALL}"
+
 # packages to install from features
 FEATURE_INSTALL = "${@' '.join(oe.packagegroup.required_packages(oe.data.typed_value('IMAGE_FEATURES', d), d))}"
 FEATURE_INSTALL[vardepvalue] = "${FEATURE_INSTALL}"
@@ -97,13 +101,12 @@ do_rootfs[depends] += " \
 "
 do_rootfs[recrdeptask] += "do_packagedata"
 
-def command_variables(d):
-    return ['ROOTFS_POSTPROCESS_COMMAND','ROOTFS_PREPROCESS_COMMAND','ROOTFS_POSTINSTALL_COMMAND','OPKG_PREPROCESS_COMMANDS','OPKG_POSTPROCESS_COMMANDS','IMAGE_POSTPROCESS_COMMAND',
-            'IMAGE_PREPROCESS_COMMAND','ROOTFS_POSTPROCESS_COMMAND','POPULATE_SDK_POST_HOST_COMMAND','POPULATE_SDK_POST_TARGET_COMMAND','SDK_POSTPROCESS_COMMAND','RPM_PREPROCESS_COMMANDS',         
-            'RPM_POSTPROCESS_COMMANDS']
+def rootfs_command_variables(d):
+    return ['ROOTFS_POSTPROCESS_COMMAND','ROOTFS_PREPROCESS_COMMAND','ROOTFS_POSTINSTALL_COMMAND','ROOTFS_POSTUNINSTALL_COMMAND','OPKG_PREPROCESS_COMMANDS','OPKG_POSTPROCESS_COMMANDS','IMAGE_POSTPROCESS_COMMAND',
+            'IMAGE_PREPROCESS_COMMAND','RPM_PREPROCESS_COMMANDS','RPM_POSTPROCESS_COMMANDS','DEB_PREPROCESS_COMMANDS','DEB_POSTPROCESS_COMMANDS']
 
 python () {
-    variables = command_variables(d)
+    variables = rootfs_command_variables(d) + sdk_command_variables(d)
     for var in variables:
         if d.getVar(var, False):
             d.setVarFlag(var, 'func', '1')
@@ -112,12 +115,11 @@ python () {
 def rootfs_variables(d):
     from oe.rootfs import variable_depends
     variables = ['IMAGE_DEVICE_TABLES','BUILD_IMAGES_FROM_FEEDS','IMAGE_TYPES_MASKED','IMAGE_ROOTFS_ALIGNMENT','IMAGE_OVERHEAD_FACTOR','IMAGE_ROOTFS_SIZE','IMAGE_ROOTFS_EXTRA_SPACE',
-                 'IMAGE_ROOTFS_MAXSIZE','IMAGE_NAME','IMAGE_LINK_NAME','IMAGE_MANIFEST','DEPLOY_DIR_IMAGE','RM_OLD_IMAGE','IMAGE_FSTYPES','IMAGE_INSTALL_COMPLEMENTARY','IMAGE_LINGUAS','SDK_OS',
-                 'SDK_OUTPUT','SDKPATHNATIVE','SDKTARGETSYSROOT','SDK_DIR','SDK_VENDOR','SDKIMAGE_INSTALL_COMPLEMENTARY','SDK_PACKAGE_ARCHS','SDK_OUTPUT','SDKTARGETSYSROOT','MULTILIBRE_ALLOW_REP',
-                 'MULTILIB_TEMP_ROOTFS','MULTILIB_VARIANTS','MULTILIBS','ALL_MULTILIB_PACKAGE_ARCHS','MULTILIB_GLOBAL_VARIANTS','BAD_RECOMMENDATIONS','NO_RECOMMENDATIONS','PACKAGE_ARCHS',
-                 'PACKAGE_CLASSES','TARGET_VENDOR','TARGET_VENDOR','TARGET_ARCH','TARGET_OS','OVERRIDES','BBEXTENDVARIANT','FEED_DEPLOYDIR_BASE_URI','INTERCEPT_DIR','USE_DEVFS',
-                 'COMPRESSIONTYPES', 'IMAGE_GEN_DEBUGFS']
-    variables.extend(command_variables(d))
+                 'IMAGE_ROOTFS_MAXSIZE','IMAGE_NAME','IMAGE_LINK_NAME','IMAGE_MANIFEST','DEPLOY_DIR_IMAGE','RM_OLD_IMAGE','IMAGE_FSTYPES','IMAGE_INSTALL_COMPLEMENTARY','IMAGE_LINGUAS',
+                 'MULTILIBRE_ALLOW_REP','MULTILIB_TEMP_ROOTFS','MULTILIB_VARIANTS','MULTILIBS','ALL_MULTILIB_PACKAGE_ARCHS','MULTILIB_GLOBAL_VARIANTS','BAD_RECOMMENDATIONS','NO_RECOMMENDATIONS',
+                 'PACKAGE_ARCHS','PACKAGE_CLASSES','TARGET_VENDOR','TARGET_ARCH','TARGET_OS','OVERRIDES','BBEXTENDVARIANT','FEED_DEPLOYDIR_BASE_URI','INTERCEPT_DIR','USE_DEVFS',
+                 'COMPRESSIONTYPES', 'IMAGE_GEN_DEBUGFS', 'ROOTFS_RO_UNNEEDED']
+    variables.extend(rootfs_command_variables(d))
     variables.extend(variable_depends(d))
     return " ".join(variables)
 
@@ -164,7 +166,7 @@ python () {
         if temp:
             bb.fatal("%s contains conflicting IMAGE_FEATURES %s %s" % (d.getVar('PN', True), feature, ' '.join(list(temp))))
 
-    d.setVar('IMAGE_FEATURES', ' '.join(list(remain_features)))
+    d.setVar('IMAGE_FEATURES', ' '.join(sorted(list(remain_features))))
 
     check_image_features(d)
     initramfs_image = d.getVar('INITRAMFS_IMAGE', True) or ""
@@ -277,7 +279,7 @@ python do_rootfs_wicenv () {
             if value:
                 envf.write('%s="%s"\n' % (var, value.strip()))
 }
-addtask do_rootfs_wicenv after do_rootfs before do_image_wic do_image_complete
+addtask do_rootfs_wicenv after do_image before do_image_wic
 do_rootfs_wicenv[vardeps] += "${WICVARS}"
 do_rootfs_wicenv[prefuncs] = 'set_image_size'
 
@@ -285,6 +287,7 @@ def setup_debugfs_variables(d):
     d.appendVar('IMAGE_ROOTFS', '-dbg')
     d.appendVar('IMAGE_LINK_NAME', '-dbg')
     d.appendVar('IMAGE_NAME','-dbg')
+    d.setVar('IMAGE_BUILDING_DEBUGFS', 'true')
     debugfs_image_fstypes = d.getVar('IMAGE_FSTYPES_DEBUGFS', True)
     if debugfs_image_fstypes:
         d.setVar('IMAGE_FSTYPES', debugfs_image_fstypes)
@@ -295,7 +298,15 @@ python setup_debugfs () {
 
 python () {
     vardeps = set()
-    ctypes = d.getVar('COMPRESSIONTYPES', True).split()
+    # We allow COMPRESSIONTYPES to have duplicates. That avoids breaking
+    # derived distros when OE-core or some other layer independently adds
+    # the same type. There is still only one command for each type, but
+    # presumably the commands will do the same when the type is the same,
+    # even when added in different places.
+    #
+    # Without de-duplication, gen_conversion_cmds() below
+    # would create the same compression command multiple times.
+    ctypes = set(d.getVar('COMPRESSIONTYPES', True).split())
     old_overrides = d.getVar('OVERRIDES', 0)
 
     def _image_base_type(type):
@@ -304,6 +315,10 @@ python () {
             if type.endswith("." + ctype):
                 basetype = type[:-len("." + ctype)]
                 break
+
+        if basetype != type:
+            # New base type itself might be generated by a conversion command.
+            basetype = _image_base_type(basetype)
 
         return basetype
 
@@ -318,6 +333,7 @@ python () {
 
     def _add_type(t):
         baset = _image_base_type(t)
+        input_t = t
         if baset not in basetypes:
             basetypes[baset]= []
         if t not in basetypes[baset]:
@@ -338,9 +354,9 @@ python () {
             basedep = _image_base_type(dep)
             typedeps[baset].add(basedep)
 
-        if baset != t:
+        if baset != input_t:
             _add_type(baset)
-        
+
     for t in alltypes[:]:
         _add_type(t)
 
@@ -381,17 +397,44 @@ python () {
             bb.fatal("No IMAGE_CMD defined for IMAGE_FSTYPES entry '%s' - possibly invalid type name or missing support class" % t)
         cmds.append(localdata.expand("\tcd ${DEPLOY_DIR_IMAGE}"))
 
-        for bt in basetypes[t]:
-            for ctype in ctypes:
-                if bt.endswith("." + ctype):
-                    cmds.append("\t" + localdata.getVar("COMPRESS_CMD_" + ctype, True))
-                    vardeps.add('COMPRESS_CMD_' + ctype)
-                    subimages.append(realt + "." + ctype)
+        # Since a copy of IMAGE_CMD_xxx will be inlined within do_image_xxx,
+        # prevent a redundant copy of IMAGE_CMD_xxx being emitted as a function.
+        d.delVarFlag('IMAGE_CMD_' + realt, 'func')
 
-        if realt not in alltypes:
-            cmds.append(localdata.expand("\trm ${IMAGE_NAME}.rootfs.${type}"))
+        rm_tmp_images = set()
+        def gen_conversion_cmds(bt):
+            for ctype in ctypes:
+                if bt[bt.find('.') + 1:] == ctype:
+                    type = bt[0:-len(ctype) - 1]
+                    if type.startswith("debugfs_"):
+                        type = type[8:]
+                    # Create input image first.
+                    gen_conversion_cmds(type)
+                    localdata.setVar('type', type)
+                    cmd = "\t" + localdata.getVar("COMPRESS_CMD_" + ctype, True)
+                    if cmd not in cmds:
+                        cmds.append(cmd)
+                    vardeps.add('COMPRESS_CMD_' + ctype)
+                    subimage = type + "." + ctype
+                    if subimage not in subimages:
+                        subimages.append(subimage)
+                    if type not in alltypes:
+                        rm_tmp_images.add(localdata.expand("${IMAGE_NAME}${IMAGE_NAME_SUFFIX}.${type}"))
+
+        for bt in basetypes[t]:
+            gen_conversion_cmds(bt)
+
+        localdata.setVar('type', realt)
+        if t not in alltypes:
+            rm_tmp_images.add(localdata.expand("${IMAGE_NAME}${IMAGE_NAME_SUFFIX}.${type}"))
         else:
             subimages.append(realt)
+
+        # Clean up after applying all conversion commands. Some of them might
+        # use the same input, therefore we cannot delete sooner without applying
+        # some complex dependency analysis.
+        for image in rm_tmp_images:
+            cmds.append("\trm " + image)
 
         after = 'do_image'
         for dep in typedeps[t]:
@@ -431,8 +474,7 @@ def get_rootfs_size(d):
                                       d.getVar('IMAGE_ROOTFS', True)])
     size_kb = int(output.split()[0])
     base_size = size_kb * overhead_factor
-    base_size = (base_size, rootfs_req_size)[base_size < rootfs_req_size] + \
-        rootfs_extra_space
+    base_size = max(base_size, rootfs_req_size) + rootfs_extra_space
 
     if base_size != int(base_size):
         base_size = int(base_size + 1)
@@ -476,15 +518,14 @@ python create_symlinks() {
     manifest_name = d.getVar('IMAGE_MANIFEST', True)
     taskname = d.getVar("BB_CURRENTTASK", True)
     subimages = (d.getVarFlag("do_" + taskname, 'subimages', False) or "").split()
-    imgsuffix = d.getVarFlag("do_" + taskname, 'imgsuffix', True) or ".rootfs."
-    os.chdir(deploy_dir)
+    imgsuffix = d.getVarFlag("do_" + taskname, 'imgsuffix', True) or d.expand("${IMAGE_NAME_SUFFIX}.")
 
     if not link_name:
         return
     for type in subimages:
-        if os.path.exists(img_name + imgsuffix + type):
-            dst = deploy_dir + "/" + link_name + "." + type
-            src = img_name + imgsuffix + type
+        dst = os.path.join(deploy_dir, link_name + "." + type)
+        src = img_name + imgsuffix + type
+        if os.path.exists(os.path.join(deploy_dir, src)):
             bb.note("Creating symlink: %s -> %s" % (dst, src))
             if os.path.islink(dst):
                 if d.getVar('RM_OLD_IMAGE', True) == "1" and \
@@ -492,6 +533,8 @@ python create_symlinks() {
                     os.remove(os.path.realpath(dst))
                 os.remove(dst)
             os.symlink(src, dst)
+        else:
+            bb.note("Skipping symlink, source does not exist: %s -> %s" % (dst, src))
 }
 
 MULTILIBRE_ALLOW_REP =. "${base_bindir}|${base_sbindir}|${bindir}|${sbindir}|${libexecdir}|${sysconfdir}|${nonarch_base_libdir}/udev|/lib/modules/[^/]*/modules.*|"

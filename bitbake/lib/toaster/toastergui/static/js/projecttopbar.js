@@ -25,6 +25,7 @@ function projectTopBarInit(ctx) {
     e.preventDefault();
     projectNameForm.hide();
     projectNameContainer.fadeIn();
+    $("#project-name-change-input").val(projectName.text());
   });
 
   $("#project-name-change-btn").click(function(){
@@ -82,9 +83,15 @@ function projectTopBarInit(ctx) {
     selectedTarget = { name: newBuildTargetInput.val() };
 
     /* Fire off the build */
-    libtoaster.startABuild(libtoaster.ctx.projectBuildsUrl,
-      null, selectedTarget.name, function(){
-      window.location.replace(libtoaster.ctx.projectBuildsUrl);
+    libtoaster.startABuild(null, selectedTarget.name,
+      function(){
+        window.location.replace(libtoaster.ctx.projectBuildsUrl);
     }, null);
   });
+
+  /* Call makeProjectNameValidation function */
+  libtoaster.makeProjectNameValidation($("#project-name-change-input"),
+      $("#hint-error-project-name"), $("#validate-project-name"),
+      $("#project-name-change-btn"));
+
 }

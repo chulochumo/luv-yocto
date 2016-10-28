@@ -75,14 +75,29 @@ function tableInit(ctx){
 
     if (tableData.total === 0){
       tableContainer.hide();
-      $("#new-search-input-"+ctx.tableName).val(tableParams.search);
-      $("#no-results-"+ctx.tableName).show();
+      /* No results caused by a search returning nothing */
+      if (tableParams.search) {
+        if ($("#no-results-special-"+ctx.tableName).length > 0) {
+          /* use this page's special no-results form instead of the default */
+          $("#no-results-search-input-"+ctx.tableName).val(tableParams.search);
+          $("#no-results-special-"+ctx.tableName).show();
+          $("#results-found-"+ctx.tableName).hide();
+        } else {
+          $("#new-search-input-"+ctx.tableName).val(tableParams.search);
+          $("#no-results-"+ctx.tableName).show();
+        }
+      }
+      else {
+        /* No results caused by there being no data */
+        $("#empty-state-"+ctx.tableName).show();
+      }
       table.trigger("table-done", [tableData.total, tableParams]);
 
       return;
     } else {
       tableContainer.show();
       $("#no-results-"+ctx.tableName).hide();
+      $("#empty-state-"+ctx.tableName).hide();
     }
 
     setupTableChrome(tableData);
@@ -94,27 +109,8 @@ function tableInit(ctx){
       var row = $("<tr></tr>");
       column_index = -1;
       for (var key_j in tableData.rows[i]){
-
-        /* if we have a static: version of a key, prefer the static: version for rendering */
-        var orig_key_j = key_j;
-
-        if (key_j.indexOf("static:") === 0) {
-          if (key_j.substr("static:".length) in tableData.rows[i]) {
-            continue;
-          }
-          orig_key_j = key_j.substr("static:".length)
-        } else if (("static:" + key_j) in tableData.rows[i]) {
-          key_j = "static:" + key_j;
-        }
-
-        /* we skip over un-displayable column entries */
-        column_index += 1;
-        if (! tableData.columns[column_index].displayable) {
-          continue;
-        }
-
         var td = $("<td></td>");
-        td.prop("class", orig_key_j);
+        td.prop("class", key_j);
         if (tableData.rows[i][key_j]){
           td.html(tableData.rows[i][key_j]);
         }
@@ -174,6 +170,15 @@ function tableInit(ctx){
     table.css("padding-bottom", 0);
     tableContainer.css("visibility", "visible");
 
+    /* If we have a hash in the url try and highlight that item in the table */
+    if (window.location.hash){
+      var highlight = $("table a[name="+window.location.hash.replace('#',''));
+      if (highlight.length > 0){
+        highlight.parents("tr").addClass('highlight');
+        window.scroll(0, highlight.position().top - 50);
+      }
+    }
+
     table.trigger("table-done", [tableData.total, tableParams]);
   }
 
@@ -181,7 +186,7 @@ function tableInit(ctx){
     if (tableChromeDone === true)
       return;
 
-    var tableHeadRow = table.find("thead");
+    var tableHeadRow = table.find("thead > tr");
     var editColMenu = $("#table-chrome-"+ctx.tableName).find(".editcol");
 
     tableHeadRow.html("");
@@ -202,7 +207,7 @@ function tableInit(ctx){
 
       /* Setup the help text */
       if (col.help_text.length > 0) {
-        var help_text = $('<i class="icon-question-sign get-help"> </i>');
+        var help_text = $('<span class="glyphicon glyphicon-question-sign get-help"> </span>');
         help_text.tooltip({title: col.help_text});
         header.append(help_text);
       }
@@ -232,15 +237,19 @@ function tableInit(ctx){
           }
         }
 
+       if (col.field_name === tableData.default_orderby){
+         title.addClass("default-orderby");
+       }
+
       } else {
         /* Not orderable */
         header.css("font-weight", "normal");
-        header.append('<span class="muted">' + col.title + '</span> ');
+        header.append('<span class="text-muted">' + col.title + '</span> ');
       }
 
       /* Setup the filter button */
       if (col.filter_name){
-        var filterBtn = $('<a href="#" role="button" data-filter-on="' + col.filter_name + '" class="pull-right btn btn-mini" data-toggle="modal"><i class="icon-filter filtered"></i></a>');
+        var filterBtn = $('<a href="#" role="button" data-filter-on="' + col.filter_name + '" class="pull-right btn btn-link btn-xs" data-toggle="modal"><i class="glyphicon glyphicon-filter filtered"></i></a>');
 
         filterBtn.data('filter-name', col.filter_name);
         filterBtn.prop('id', col.filter_name);
@@ -259,7 +268,7 @@ function tableInit(ctx){
       tableHeadRow.append(header);
 
       /* Now setup the checkbox state and click handler */
-      var toggler = $('<li><label class="checkbox">'+col.title+'<input type="checkbox" id="checkbox-'+ col.field_name +'" class="col-toggle" value="'+col.field_name+'" /></label></li>');
+      var toggler = $('<li><div class="checkbox"><label><input type="checkbox" id="checkbox-'+ col.field_name +'" class="col-toggle" value="'+col.field_name+'" />'+col.title+'</label></div></li>');
 
       var togglerInput = toggler.find("input");
 
@@ -269,7 +278,8 @@ function tableInit(ctx){
       if (col.hideable){
         togglerInput.click(colToggleClicked);
       } else {
-        toggler.find("label").addClass("muted");
+        toggler.find("label").addClass("text-muted");
+        toggler.find("label").parent().addClass("disabled");
         togglerInput.attr("disabled", "disabled");
       }
 
@@ -286,11 +296,12 @@ function tableInit(ctx){
   /* Toggles the active state of the filter button */
   function filterBtnActive(filterBtn, active){
     if (active) {
+      filterBtn.removeClass("btn-link");
       filterBtn.addClass("btn-primary");
 
       filterBtn.tooltip({
           html: true,
-          title: '<button class="btn btn-small btn-primary" onClick=\'$("#clear-filter-btn-'+ ctx.tableName +'").click();\'>Clear filter</button>',
+          title: '<button class="btn btn-sm btn-primary" onClick=\'$("#clear-filter-btn-'+ ctx.tableName +'").click();\'>Clear filter</button>',
           placement: 'bottom',
           delay: {
             hide: 1500,
@@ -299,6 +310,7 @@ function tableInit(ctx){
       });
     } else {
       filterBtn.removeClass("btn-primary");
+      filterBtn.addClass("btn-link");
       filterBtn.tooltip('destroy');
     }
   }
@@ -377,7 +389,7 @@ function tableInit(ctx){
       if (col === tableParams.orderby ||
           '-' + col === tableParams.orderby){
         tableParams.orderby = null;
-        loadData(tableParams);
+        $("#"+ctx.tableName +" .default-orderby").click();
       }
     }
 
@@ -404,23 +416,23 @@ function tableInit(ctx){
     var hasNoRecords = (Number(filterActionData.count) == 0);
 
     var actionStr = '<div class="radio">' +
-                    '<input type="radio" name="filter"' +
-                    '       value="' + filterName + '"';
+      '<label class="filter-title' +
+      (hasNoRecords ? ' text-muted' : '') + '"' +
+      '       for="' + filterName + '">' +
+      '<input type="radio" name="filter"' +
+      '       value="' + filterName + '"';
 
     if (hasNoRecords) {
       actionStr += ' disabled="disabled"';
     }
 
     actionStr += ' id="' + filterName + '">' +
-                 '<input type="hidden" name="filter_value" value="on"' +
-                 '       data-value-for="' + filterName + '">' +
-                 '<label class="filter-title' +
-                 (hasNoRecords ? ' muted' : '') + '"' +
-                 '       for="' + filterName + '">' +
-                 filterActionData.title +
-                 ' (' + filterActionData.count + ')' +
-                 '</label>' +
-                 '</div>';
+      '<input type="hidden" name="filter_value" value="on"' +
+      '       data-value-for="' + filterName + '">' +
+      filterActionData.title +
+      ' (' + filterActionData.count + ')' +
+      '</label>' +
+      '</div>';
 
     var action = $(actionStr);
 
@@ -454,22 +466,23 @@ function tableInit(ctx){
    */
   function createActionDateRange(filterName, filterValue, filterActionData) {
     var action = $('<div class="radio">' +
+                   '<label class="filter-title"' +
+                   '       for="' + filterName + '">' +
                    '<input type="radio" name="filter"' +
                    '       value="' + filterName + '" ' +
                    '       id="' + filterName + '">' +
                    '<input type="hidden" name="filter_value" value=""' +
                    '       data-value-for="' + filterName + '">' +
-                   '<label class="filter-title"' +
-                   '       for="' + filterName + '">' +
                    filterActionData.title +
                    '</label>' +
-                   '<input type="text" maxlength="10" class="input-small"' +
+									 '<div class="form-inline form-group date-filter-controls">' +
+                   '<input type="text" maxlength="10" class="form-control"' +
                    '       data-date-from-for="' + filterName + '">' +
-                   '<span class="help-inline">to</span>' +
-                   '<input type="text" maxlength="10" class="input-small"' +
+                   '<span>to</span>' +
+                   '<input type="text" maxlength="10" class="form-control"' +
                    '       data-date-to-for="' + filterName + '">' +
                    '<span class="help-inline get-help">(yyyy-mm-dd)</span>' +
-                   '</div>');
+                   '</div></div>');
 
     var radio = action.find('[type="radio"]');
     var value = action.find('[data-value-for]');
@@ -610,7 +623,7 @@ function tableInit(ctx){
             queryset on the table
           */
           var filterActionRadios = $('#filter-actions-' + ctx.tableName);
-          var filterApplyBtn = $('[data-role="filter-apply"]');
+          var filterApplyBtn = $('[data-cat="filter-apply"]');
 
           var setApplyButtonState = function (e, filterActionValue) {
             if (filterActionValue !== undefined) {
@@ -651,7 +664,7 @@ function tableInit(ctx){
             if (action) {
               // Setup the current selected filter; default to 'all' if
               // no current filter selected
-              var radioInput = action.children('input[name="filter"]');
+              var radioInput = action.find('input[name="filter"]');
               if ((tableParams.filter &&
                   tableParams.filter === radioInput.val()) ||
                   filterActionData.action_name == 'all') {
@@ -671,6 +684,13 @@ function tableInit(ctx){
     });
   }
 
+  /* Allow pages to trigger reload event */
+  table.on('reload', function(e, newTableParams){
+    if (newTableParams)
+      loadData(newTableParams);
+    else
+      loadData(tableParams)
+  });
 
   $(".get-help").tooltip({container:'body', html:true, delay:{show:300}});
 
@@ -770,6 +790,7 @@ function tableInit(ctx){
 
     loadData(tableParams);
 
-    $(this).parent().modal('hide');
+
+    $('#filter-modal-'+ctx.tableName).modal('hide');
   });
 }

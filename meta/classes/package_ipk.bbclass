@@ -21,6 +21,8 @@ python do_package_ipk () {
     import textwrap
     import subprocess
 
+    oldcwd = os.getcwd()
+
     workdir = d.getVar('WORKDIR', True)
     outdir = d.getVar('PKGWRITEDIRIPK', True)
     tmpdir = d.getVar('TMPDIR', True)
@@ -225,7 +227,7 @@ python do_package_ipk () {
                 raise bb.build.FuncFailed("unable to open %s script file for writing." % script)
             scriptfile.write(scriptvar)
             scriptfile.close()
-            os.chmod(os.path.join(controldir, script), 0755)
+            os.chmod(os.path.join(controldir, script), 0o755)
 
         conffiles_str = ' '.join(get_conffiles(pkg, d))
         if conffiles_str:
@@ -246,9 +248,15 @@ python do_package_ipk () {
             bb.utils.unlockfile(lf)
             raise bb.build.FuncFailed("opkg-build execution failed")
 
+        if d.getVar('IPK_SIGN_PACKAGES', True) == '1':
+            ipkver = "%s-%s" % (d.getVar('PKGV', True), d.getVar('PKGR', True))
+            ipk_to_sign = "%s/%s_%s_%s.ipk" % (pkgoutdir, pkgname, ipkver, d.getVar('PACKAGE_ARCH', True))
+            sign_ipk(d, ipk_to_sign)
+
         cleanupcontrol(root)
         bb.utils.unlockfile(lf)
 
+    os.chdir(oldcwd)
 }
 # Otherwise allarch packages may change depending on override configuration
 do_package_ipk[vardepsexclude] = "OVERRIDES"

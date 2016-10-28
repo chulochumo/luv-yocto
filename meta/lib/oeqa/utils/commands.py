@@ -18,6 +18,11 @@ from oeqa.utils import CommandError
 from oeqa.utils import ftools
 import re
 import contextlib
+# Export test doesn't require bb
+try:
+    import bb
+except ImportError:
+    pass
 
 class Command(object):
     def __init__(self, command, bg=False, timeout=None, data=None, **options):
@@ -36,7 +41,7 @@ class Command(object):
         self.data = data
 
         self.options = dict(self.defaultopts)
-        if isinstance(self.cmd, basestring):
+        if isinstance(self.cmd, str):
             self.options["shell"] = True
         if self.data:
             self.options['stdin'] = subprocess.PIPE
@@ -73,7 +78,7 @@ class Command(object):
                 self.process.kill()
                 self.thread.join()
 
-        self.output = self.output.rstrip()
+        self.output = self.output.decode("utf-8").rstrip()
         self.status = self.process.poll()
 
         self.log.debug("Command '%s' returned %d as exit code." % (self.cmd, self.status))
@@ -118,7 +123,7 @@ def bitbake(command, ignore_status=False, timeout=None, postconfig=None, **optio
     else:
         extra_args = ""
 
-    if isinstance(command, basestring):
+    if isinstance(command, str):
         cmd = "bitbake " + extra_args + " " + command
     else:
         cmd = [ "bitbake" ] + [a for a in (command + extra_args.split(" ")) if a not in [""]]
@@ -177,7 +182,7 @@ def create_temp_layer(templayerdir, templayername, priority=999, recipepathspec=
 
 
 @contextlib.contextmanager
-def runqemu(pn, test):
+def runqemu(pn, ssh=True):
 
     import bb.tinfoil
     import bb.build
@@ -208,10 +213,20 @@ def runqemu(pn, test):
         # Luckily QemuTarget doesn't need it after the constructor.
         tinfoil.shutdown()
 
+    # Setup bitbake logger as console handler is removed by tinfoil.shutdown
+    bblogger = logging.getLogger('BitBake')
+    bblogger.setLevel(logging.INFO)
+    console = logging.StreamHandler(sys.stdout)
+    bbformat = bb.msg.BBLogFormatter("%(levelname)s: %(message)s")
+    if sys.stdout.isatty():
+        bbformat.enable_color()
+    console.setFormatter(bbformat)
+    bblogger.addHandler(console)
+
     try:
         qemu.deploy()
         try:
-            qemu.start()
+            qemu.start(ssh=ssh)
         except bb.build.FuncFailed:
             raise Exception('Failed to start QEMU - see the logs in %s' % logdir)
 

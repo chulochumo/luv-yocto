@@ -10,11 +10,10 @@ import subprocess
 import re
 
 
-class Rootfs(object):
+class Rootfs(object, metaclass=ABCMeta):
     """
     This is an abstract class. Do not instantiate this directly.
     """
-    __metaclass__ = ABCMeta
 
     def __init__(self, d):
         self.d = d
@@ -40,51 +39,46 @@ class Rootfs(object):
     def _log_check(self):
         pass
 
-    def _log_check_warn(self):
-        r = re.compile('^(warn|Warn|NOTE: warn|NOTE: Warn|WARNING:)')
+    def _log_check_common(self, type, match):
+        # Ignore any lines containing log_check to avoid recursion, and ignore
+        # lines beginning with a + since sh -x may emit code which isn't
+        # actually executed, but may contain error messages
+        excludes = [ 'log_check', r'^\+' ]
+        if hasattr(self, 'log_check_expected_regexes'):
+            excludes.extend(self.log_check_expected_regexes)
+        excludes = [re.compile(x) for x in excludes]
+        r = re.compile(match)
         log_path = self.d.expand("${T}/log.do_rootfs")
+        messages = []
         with open(log_path, 'r') as log:
             for line in log:
-                if 'log_check' in line or 'NOTE:' in line:
+                for ee in excludes:
+                    m = ee.search(line)
+                    if m:
+                        break
+                if m:
                     continue
 
                 m = r.search(line)
                 if m:
-                    bb.warn('[log_check] %s: found a warning message in the logfile (keyword \'%s\'):\n[log_check] %s'
-				    % (self.d.getVar('PN', True), m.group(), line))
+                    messages.append('[log_check] %s' % line)
+        if messages:
+            if len(messages) == 1:
+                msg = '1 %s message' % type
+            else:
+                msg = '%d %s messages' % (len(messages), type)
+            msg = '[log_check] %s: found %s in the logfile:\n%s' % \
+                (self.d.getVar('PN', True), msg, ''.join(messages))
+            if type == 'error':
+                bb.fatal(msg)
+            else:
+                bb.warn(msg)
+
+    def _log_check_warn(self):
+        self._log_check_common('warning', '^(warn|Warn|WARNING:)')
 
     def _log_check_error(self):
-        r = re.compile(self.log_check_regex)
-        log_path = self.d.expand("${T}/log.do_rootfs")
-        with open(log_path, 'r') as log:
-            found_error = 0
-            message = "\n"
-            for line in log:
-                if 'log_check' in line:
-                    continue
-
-                if hasattr(self, 'log_check_expected_errors_regexes'):
-                    m = None
-                    for ee in self.log_check_expected_errors_regexes:
-                        m = re.search(ee, line)
-                        if m:
-                            break
-                    if m:
-                        continue
-
-                m = r.search(line)
-                if m:
-                    found_error = 1
-                    bb.warn('[log_check] In line: [%s]' % line)
-                    bb.warn('[log_check] %s: found an error message in the logfile (keyword \'%s\'):\n[log_check] %s'
-				    % (self.d.getVar('PN', True), m.group(), line))
-
-                if found_error >= 1 and found_error <= 5:
-                    message += line + '\n'
-                    found_error += 1
-
-                if found_error == 6:
-                    bb.fatal(message)
+        self._log_check_common('error', self.log_check_regex)
 
     def _insert_feed_uris(self):
         if bb.utils.contains("IMAGE_FEATURES", "package-management",
@@ -121,8 +115,10 @@ class Rootfs(object):
 
         bb.note("  Copying back package database...")
         for dir in dirs:
+            if not os.path.isdir(self.image_rootfs + '-orig' + dir):
+                continue
             bb.utils.mkdirhier(self.image_rootfs + os.path.dirname(dir))
-            shutil.copytree(self.image_rootfs + '-orig' + dir, self.image_rootfs + dir)
+            shutil.copytree(self.image_rootfs + '-orig' + dir, self.image_rootfs + dir, symlinks=True)
 
         cpath = oe.cachedpath.CachedPath()
         # Copy files located in /usr/lib/debug or /usr/src/debug
@@ -173,6 +169,7 @@ class Rootfs(object):
         bb.note("###### Generate rootfs #######")
         pre_process_cmds = self.d.getVar("ROOTFS_PREPROCESS_COMMAND", True)
         post_process_cmds = self.d.getVar("ROOTFS_POSTPROCESS_COMMAND", True)
+        rootfs_post_install_cmds = self.d.getVar('ROOTFS_POSTINSTALL_COMMAND', True)
 
         postinst_intercepts_dir = self.d.getVar("POSTINST_INTERCEPTS_DIR", True)
         if not postinst_intercepts_dir:
@@ -201,6 +198,8 @@ class Rootfs(object):
         bb.utils.mkdirhier(sysconfdir)
         with open(sysconfdir + "/version", "w+") as ver:
             ver.write(self.d.getVar('BUILDNAME', True) + "\n")
+
+        execute_pre_post_process(self.d, rootfs_post_install_cmds)
 
         self._run_intercepts()
 
@@ -238,28 +237,13 @@ class Rootfs(object):
                                       self.d.getVar('IMAGE_ROOTFS', True),
                                       "run-postinsts", "remove"])
 
-        runtime_pkgmanage = bb.utils.contains("IMAGE_FEATURES", "package-management",
-                         True, False, self.d)
-        sysvcompat_in_distro = bb.utils.contains("DISTRO_FEATURES", [ "systemd", "sysvinit" ],
-                         True, False, self.d)
         image_rorfs = bb.utils.contains("IMAGE_FEATURES", "read-only-rootfs",
-                         True, False, self.d)
-        if sysvcompat_in_distro and not image_rorfs:
-            pkg_to_remove = ""
-        else:
-            pkg_to_remove = "update-rc.d"
+                                        True, False, self.d)
         if image_rorfs:
             # Remove components that we don't need if it's a read-only rootfs
+            unneeded_pkgs = self.d.getVar("ROOTFS_RO_UNNEEDED", True).split()
             pkgs_installed = image_list_installed_packages(self.d)
-            pkgs_to_remove = list()
-            for pkg in pkgs_installed:
-                if pkg in ["update-rc.d",
-                        "base-passwd",
-                        "shadow",
-                        "update-alternatives", pkg_to_remove,
-                        self.d.getVar("ROOTFS_BOOTSTRAP_INSTALL", True)
-                        ]:
-                    pkgs_to_remove.append(pkg)
+            pkgs_to_remove = [pkg for pkg in pkgs_installed if pkg in unneeded_pkgs]
 
             if len(pkgs_to_remove) > 0:
                 self.pm.remove(pkgs_to_remove, False)
@@ -273,6 +257,8 @@ class Rootfs(object):
         post_uninstall_cmds = self.d.getVar("ROOTFS_POSTUNINSTALL_COMMAND", True)
         execute_pre_post_process(self.d, post_uninstall_cmds)
 
+        runtime_pkgmanage = bb.utils.contains("IMAGE_FEATURES", "package-management",
+                                              True, False, self.d)
         if not runtime_pkgmanage:
             # Remove the package manager data files
             self.pm.remove_packaging_data()
@@ -484,32 +470,6 @@ class RpmRootfs(Rootfs):
         # already saved in /etc/rpm-postinsts
         pass
 
-    def _log_check_error(self):
-        r = re.compile('(unpacking of archive failed|Cannot find package|exit 1|ERR|Fail)')
-        log_path = self.d.expand("${T}/log.do_rootfs")
-        with open(log_path, 'r') as log:
-            found_error = 0
-            message = "\n"
-            for line in log.read().split('\n'):
-                if 'log_check' in line:
-                    continue
-                # sh -x may emit code which isn't actually executed
-                if line.startswith('+'):
-		    continue
-
-                m = r.search(line)
-                if m:
-                    found_error = 1
-                    bb.warn('log_check: There were error messages in the logfile')
-                    bb.warn('log_check: Matched keyword: [%s]\n\n' % m.group())
-
-                if found_error >= 1 and found_error <= 5:
-                    message += line + '\n'
-                    found_error += 1
-
-                if found_error == 6:
-                    bb.fatal(message)
-
     def _log_check(self):
         self._log_check_warn()
         self._log_check_error()
@@ -575,7 +535,7 @@ class DpkgOpkgRootfs(Rootfs):
                     pkg_depends = m_depends.group(1)
 
         # remove package dependencies not in postinsts
-        pkg_names = pkgs.keys()
+        pkg_names = list(pkgs.keys())
         for pkg_name in pkg_names:
             deps = pkgs[pkg_name][:]
 
@@ -608,7 +568,7 @@ class DpkgOpkgRootfs(Rootfs):
             pkgs = self._get_pkgs_postinsts(status_file)
         if pkgs:
             root = "__packagegroup_postinst__"
-            pkgs[root] = pkgs.keys()
+            pkgs[root] = list(pkgs.keys())
             _dep_resolve(pkgs, root, pkg_list, [])
             pkg_list.remove(root)
 
@@ -632,7 +592,7 @@ class DpkgRootfs(DpkgOpkgRootfs):
     def __init__(self, d, manifest_dir):
         super(DpkgRootfs, self).__init__(d)
         self.log_check_regex = '^E:'
-        self.log_check_expected_errors_regexes = \
+        self.log_check_expected_regexes = \
         [
             "^E: Unmet dependencies."
         ]
@@ -890,7 +850,6 @@ class OpkgRootfs(DpkgOpkgRootfs):
         pkgs_to_install = self.manifest.parse_initial_manifest()
         opkg_pre_process_cmds = self.d.getVar('OPKG_PREPROCESS_COMMANDS', True)
         opkg_post_process_cmds = self.d.getVar('OPKG_POSTPROCESS_COMMANDS', True)
-        rootfs_post_install_cmds = self.d.getVar('ROOTFS_POSTINSTALL_COMMAND', True)
 
         # update PM index files, unless users provide their own feeds
         if (self.d.getVar('BUILD_IMAGES_FROM_FEEDS', True) or "") != "1":
@@ -918,10 +877,9 @@ class OpkgRootfs(DpkgOpkgRootfs):
 
         self.pm.install_complementary()
 
-        self._setup_dbg_rootfs(['/var/lib/opkg'])
+        self._setup_dbg_rootfs(['/etc', '/var/lib/opkg', '/usr/lib/ssl'])
 
         execute_pre_post_process(self.d, opkg_post_process_cmds)
-        execute_pre_post_process(self.d, rootfs_post_install_cmds)
 
         if self.inc_opkg_image_gen == "1":
             self.pm.backup_packaging_data()
@@ -949,7 +907,7 @@ class OpkgRootfs(DpkgOpkgRootfs):
         self._log_check_error()
 
     def _cleanup(self):
-        pass
+        self.pm.remove_lists()
 
 def get_class_for_type(imgtype):
     return {"rpm": RpmRootfs,

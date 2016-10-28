@@ -17,17 +17,18 @@ do_compile() {
 
 do_install() {
     install -d ${D}${sysconfdir}
-    install -d ${D}${sysconfdir}/init.d
     install -m 0644 ${WORKDIR}/inittab ${D}${sysconfdir}/inittab
-    install -m 0755 ${WORKDIR}/start_getty ${D}${sysconfdir}/init.d/start_getty
+    install -d ${D}${base_bindir}
+    install -m 0755 ${WORKDIR}/start_getty ${D}${base_bindir}/start_getty
 
     set -x
     tmp="${SERIAL_CONSOLES}"
     for i in $tmp
     do
 	j=`echo ${i} | sed s/\;/\ /g`
-	label=`echo ${i} | sed -e 's/tty//' -e 's/^.*;//' -e 's/;.*//'`
-	echo "$label:12345:respawn:${sysconfdir}/init.d/start_getty ${j}" >> ${D}${sysconfdir}/inittab
+	l=`echo ${i} | sed -e 's/tty//' -e 's/^.*;//' -e 's/;.*//'`
+	label=`echo $l | sed 's/.*\(....\)/\1/'`
+	echo "$label:12345:respawn:${base_bindir}/start_getty ${j}" >> ${D}${sysconfdir}/inittab
     done
 
     if [ "${USE_VT}" = "1" ]; then
@@ -76,7 +77,7 @@ fi
 # Set PACKAGE_ARCH appropriately.
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-FILES_${PN} = "${sysconfdir}/inittab ${sysconfdir}/init.d/start_getty"
+FILES_${PN} = "${sysconfdir}/inittab ${base_bindir}/start_getty"
 CONFFILES_${PN} = "${sysconfdir}/inittab"
 
 USE_VT ?= "1"

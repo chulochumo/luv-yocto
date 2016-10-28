@@ -162,7 +162,7 @@ python build_efi_cfg() {
         raise bb.build.FuncFailed('Unable to read GRUBCFG')
 
     try:
-        cfgfile = file(path, 'w')
+        cfgfile = open(path, 'w')
     except OSError:
         raise bb.build.funcFailed('Unable to open %s' % (cfgfile))
 
@@ -181,12 +181,12 @@ python build_efi_cfg() {
 
     append = d.getVar('APPEND', True)
     if append:
-        cfgfile.write('%s' % (append))
+        cfgfile.write(' %s' % (append))
 
     append_var = d.getVar('APPEND_netconsole', True)
     if append_var:
         cfgfile.write(" ")
-        cfgfile.write('%s' % (append_var))
+        cfgfile.write(' %s' % (append_var))
 
     cfgfile.write('\n')
 

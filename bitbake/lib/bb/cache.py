@@ -28,22 +28,16 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-
 import os
+import sys
 import logging
+import pickle
 from collections import defaultdict
 import bb.utils
 
 logger = logging.getLogger("BitBake.Cache")
 
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
-    logger.info("Importing cPickle failed. "
-                "Falling back to a very slow implementation.")
-
-__cache_version__ = "149"
+__cache_version__ = "150"
 
 def getCacheFile(path, filename, data_hash):
     return os.path.join(path, filename + "." + data_hash)
@@ -80,7 +74,7 @@ class RecipeInfoCommon(object):
         out_dict = dict((var, metadata.getVarFlag(var, flag, True))
                     for var in varlist)
         if squash:
-            return dict((k,v) for (k,v) in out_dict.iteritems() if v)
+            return dict((k,v) for (k,v) in out_dict.items() if v)
         else:
             return out_dict
 
@@ -99,7 +93,7 @@ class CoreRecipeInfo(RecipeInfoCommon):
         self.timestamp = bb.parse.cached_mtime(filename)
         self.variants = self.listvar('__VARIANTS', metadata) + ['']
         self.appends = self.listvar('__BBAPPEND', metadata)
-        self.nocache = self.getvar('__BB_DONT_CACHE', metadata)
+        self.nocache = self.getvar('BB_DONT_CACHE', metadata)
 
         self.skipreason = self.getvar('__SKIPPED', metadata)
         if self.skipreason:
@@ -240,7 +234,7 @@ class CoreRecipeInfo(RecipeInfoCommon):
         cachedata.universe_target.append(self.pn)
 
         cachedata.hashfn[fn] = self.hashfilename
-        for task, taskhash in self.basetaskhashes.iteritems():
+        for task, taskhash in self.basetaskhashes.items():
             identifier = '%s.%s' % (fn, task)
             cachedata.basetaskhash[identifier] = taskhash
 
@@ -339,7 +333,7 @@ class Cache(object):
                             value = pickled.load()
                         except Exception:
                             break
-                        if self.depends_cache.has_key(key):
+                        if key in self.depends_cache:
                             self.depends_cache[key].append(value)
                         else:
                             self.depends_cache[key] = [value]
@@ -404,7 +398,7 @@ class Cache(object):
         infos = []
         datastores = cls.load_bbfile(filename, appends, configdata)
         depends = []
-        for variant, data in sorted(datastores.iteritems(),
+        for variant, data in sorted(datastores.items(),
                                     key=lambda i: i[0],
                                     reverse=True):
             virtualfn = cls.realfn2virtual(filename, variant)
@@ -616,7 +610,7 @@ class Cache(object):
         pickler_dict['CoreRecipeInfo'].dump(bb.__version__)
 
         try:
-            for key, info_array in self.depends_cache.iteritems():
+            for key, info_array in self.depends_cache.items():
                 for info in info_array:
                     if isinstance(info, RecipeInfoCommon):
                         cache_class_name = info.__class__.__name__
@@ -755,13 +749,14 @@ class MultiProcessCache(object):
         self.cachedata = self.create_cachedata()
         self.cachedata_extras = self.create_cachedata()
 
-    def init_cache(self, d):
+    def init_cache(self, d, cache_file_name=None):
         cachedir = (d.getVar("PERSISTENT_DIR", True) or
                     d.getVar("CACHE", True))
         if cachedir in [None, '']:
             return
         bb.utils.mkdirhier(cachedir)
-        self.cachefile = os.path.join(cachedir, self.__class__.cache_file_name)
+        self.cachefile = os.path.join(cachedir,
+                                      cache_file_name or self.__class__.cache_file_name)
         logger.debug(1, "Using cache in '%s'", self.cachefile)
 
         glf = bb.utils.lockfile(self.cachefile + ".lock")
@@ -785,7 +780,7 @@ class MultiProcessCache(object):
         data = [{}]
         return data
 
-    def save_extras(self, d):
+    def save_extras(self):
         if not self.cachefile:
             return
 
@@ -815,7 +810,7 @@ class MultiProcessCache(object):
                 if h not in dest[j]:
                     dest[j][h] = source[j][h]
 
-    def save_merge(self, d):
+    def save_merge(self):
         if not self.cachefile:
             return
 
