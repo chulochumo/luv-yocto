@@ -47,12 +47,13 @@ do_populate_image() {
 		echo "bootaa64.efi" > ${HDDDIR}${EFIDIR}/startup.nsh
 		install -m 0644 ${DEPLOY_DIR_IMAGE}/bootaa64.efi ${HDDDIR}${EFIDIR}
 	fi
-	install -m 0644 ${GRUBCFG} ${HDDDIR}${EFIDIR}
+	install -m 0644 ${LUV_CFG} ${HDDDIR}
 	build_hddimg
 }
 
 python do_mkimage() {
     bb.build.exec_func('build_efi_cfg', d)
+    bb.build.exec_func('build_luv_cfg', d)
     bb.build.exec_func('do_populate_image', d)
     bb.build.exec_func('create_symlinks', d)
 }

@@ -11,7 +11,6 @@ INITRD_IMAGE = "core-image-efi-initramfs"
 INITRD_LIVE = "${DEPLOY_DIR_IMAGE}/${INITRD_IMAGE}-${MACHINE}.cpio.gz"
 MACHINE_FEATURES += "efi"
 APPEND = "debug crashkernel=256M console=ttyS0,115200 console=ttyPCH0,115200 ip=dhcp log_buf_len=1M"
-APPEND_netconsole = "luv_netconsole=10.11.12.13,64001"
 LUVCFG_netconsole = "LUV_NETCONSOLE=10.11.12.13,64001"
 LUVCFG_storage_url = "LUV_STORAGE_URL=http://ipaddress/cgi-bin/upload.php"
 APPEND_aarch64 = "crashkernel=256M console=ttyAMA0 uefi_debug acpi=force"
@@ -79,6 +78,10 @@ build_img() {
 
 python do_create_img() {
     bb.build.exec_func('build_img', d)
+}
+
+python do_bootimg_prepend() {
+    bb.build.exec_func('build_luv_cfg', d)
 }
 
 do_bootimg[depends] += "${INITRD_IMAGE}:do_build"
