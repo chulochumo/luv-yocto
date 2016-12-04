@@ -14,9 +14,10 @@ iface wlan0 inet dhcp
 iface atml0 inet dhcp
 
 # Wired or wireless interfaces
-auto eth0
-iface eth0 inet dhcp
-iface eth1 inet dhcp
+auto eno1
+iface eno1 inet dhcp
+iface enp1s0f0 inet dhcp
+iface enp1s0f1 inet dhcp
 
 # USB dongles
 iface usb0 inet dhcp
