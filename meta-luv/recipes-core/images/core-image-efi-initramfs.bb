@@ -8,7 +8,7 @@ IMAGE_INSTALL = "\
     keymaps kernel-image fwts bash coreutils gawk grep util-linux-agetty \
     util-linux-mount util-linux-umount kmod sed tar net-tools \
     shadow util-linux procps efivarfs-test \
-    psplash kernel-efi-warnings linux-firmware \
+    plymouth-set-default-theme plymouth linux-firmware \
     "
 
 X86_ADDITIONS = "chipsec python-codecs python-subprocess kexec vmcore-dmesg bits \

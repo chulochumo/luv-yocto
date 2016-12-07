@@ -1,0 +1,30 @@
+From e5e25fb90e5403ae92d4207583caa0030fc39b94 Mon Sep 17 00:00:00 2001
+From: Megha Dey <megha.dey@linux.intel.com>
+Date: Mon, 5 Dec 2016 16:32:50 -0800
+Subject: [PATCH] plymouth: Specify number of test suites in x86
+
+The number of test suites differ for x86, x86-64 and ARM. As such, we need to
+provide separate numbers which will be used to display the progress of
+the test suites in the progress bar.
+
+Signed-off-by: Megha Dey <megha.dey@linux.intel.com>
+---
+ themes/script/script.script | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/themes/script/script.script b/themes/script/script.script
+index 8a9dff9..5d2a543 100644
+--- a/themes/script/script.script
++++ b/themes/script/script.script
+@@ -145,7 +145,7 @@ Plymouth.SetQuitFunction(quit_callback);
+ message_sprites = [];
+ message_sprite_count = 0;
+ message_sprite_y = progress_bar.y-30;
+-num_test_suites = 6;
++num_test_suites = 5;
+ 
+ fun display_message_callback (text)
+ {
+-- 
+1.9.1
+
