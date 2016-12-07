@@ -1,0 +1,10 @@
+[Unit]
+Description=should telemetrics run
+Before=telemd.service
+
+[Service]
+Type=oneshot
+ExecStart=@SBINDIR@/telemetrics_runner
+
+[Install]
+WantedBy=multi-user.target

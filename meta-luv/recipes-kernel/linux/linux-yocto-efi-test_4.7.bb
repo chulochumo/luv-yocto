@@ -81,6 +81,7 @@ SRC_URI_append_x86 = " file://defconfig \
                        file://network-devices.cfg \
                        file://linux_quirks.cfg \
                        file://usb_ethernet.cfg \
+                       file://pstore.cfg \
                      "
 
 # Add the defconfig from v4.6 kernel and the configuration x86-64 fragments
@@ -96,6 +97,7 @@ SRC_URI_append_x86-64 = " file://defconfig \
                           file://network-devices.cfg \
                           file://linux_quirks.cfg \
                           file://usb_ethernet.cfg \
+                          file://pstore.cfg \
                         "
 
 # Add the defconfig from v4.6 kernel and the configuration arm64 fragments

@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# Copyright 2016 Intel Corporation; author Megha Dey
+#
+# Script to enable telemetrics daemon depending on user's request
+
+echo "User can opt-in or opt-out of the telemetric service. The default option is opt-out"
+
+grep -q telemetrics.opt-in /proc/cmdline
+if [ $? -eq 1 ]; then
+    mkdir /etc/telemetrics/
+    mkdir /etc/telemetrics/opt-out/
+fi
